@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI旅行搭子 - 智能行程规划</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="css/style.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Landing / Input Page -->
+    <div id="landing-page" class="page active">
+        <div class="landing-container">
+            <div class="brand">
+                <div class="brand-icon">✈️</div>
+                <h1>AI旅行搭子</h1>
+                <p class="subtitle">告诉我你想去哪，AI帮你把行程安排好</p>
+            </div>
+            <div class="input-area">
+                <div class="input-box">
+                    <textarea id="trip-input" placeholder="例如：加拿大落基山脉看极光和雪山、日本关西赏樱、新疆自驾环线..."></textarea>
+
+                    <!-- Structured Options -->
+                    <div class="option-groups">
+                        <!-- Days -->
+                        <div class="option-group">
+                            <label class="option-label">玩几天</label>
+                            <div class="option-chips" data-field="days">
+                                <span class="chip" data-value="3天">3天</span>
+                                <span class="chip" data-value="5天">5天</span>
+                                <span class="chip" data-value="7天">7天</span>
+                                <span class="chip" data-value="10天">10天+</span>
+                            </div>
+                        </div>
+                        <!-- Travel Mode -->
+                        <div class="option-group">
+                            <label class="option-label">怎么出行</label>
+                            <div class="option-chips" data-field="mode">
+                                <span class="chip" data-value="自驾">🚗 自驾</span>
+                                <span class="chip" data-value="高铁">🚄 高铁</span>
+                                <span class="chip" data-value="飞机+租车">✈️ 飞机+租车</span>
+                                <span class="chip" data-value="公共交通">🚌 公共交通</span>
+                            </div>
+                        </div>
+                        <!-- Companions -->
+                        <div class="option-group">
+                            <label class="option-label">和谁一起</label>
+                            <div class="option-chips" data-field="companion">
+                                <span class="chip" data-value="独自">👤 独自</span>
+                                <span class="chip" data-value="情侣">💑 情侣</span>
+                                <span class="chip" data-value="亲子">👨‍👩‍👧 亲子</span>
+                                <span class="chip" data-value="朋友">👫 朋友</span>
+                                <span class="chip" data-value="带老人">👴 带老人</span>
+                            </div>
+                        </div>
+                        <!-- Budget -->
+                        <div class="option-group">
+                            <label class="option-label">住宿预算/晚</label>
+                            <div class="option-chips" data-field="budget">
+                                <span class="chip" data-value="省钱(¥200以下)">💰 省钱</span>
+                                <span class="chip" data-value="适中(¥200-500)">💰💰 适中</span>
+                                <span class="chip" data-value="舒适(¥500-1000)">💰💰💰 舒适</span>
+                                <span class="chip" data-value="不差钱(¥1000+)">💎 不差钱</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Expandable Extra Options -->
+                    <div class="extra-toggle" id="extra-toggle">
+                        <span>▾ 更多偏好（可选）</span>
+                    </div>
+                    <div class="extra-options" id="extra-options">
+                        <div class="option-group">
+                            <label class="option-label">出发城市</label>
+                            <input type="text" id="departure-city" class="text-input-sm" placeholder="如：上海、北京" />
+                        </div>
+                        <div class="option-group">
+                            <label class="option-label">旅行风格</label>
+                            <div class="option-chips" data-field="style">
+                                <span class="chip" data-value="打卡型">⚡ 打卡型</span>
+                                <span class="chip" data-value="深度游">🎯 深度游</span>
+                                <span class="chip" data-value="休闲度假">🧘 休闲度假</span>
+                                <span class="chip" data-value="户外探险">🏕️ 户外探险</span>
+                            </div>
+                        </div>
+                        <div class="option-group">
+                            <label class="option-label">特殊需求</label>
+                            <input type="text" id="special-needs" class="text-input-sm" placeholder="如：有高血压别去高海拔、需要无障碍设施" />
+                        </div>
+                    </div>
+
+                    <button id="generate-btn" class="btn-primary">
+                        <span class="btn-text">生成行程方案</span>
+                        <span class="btn-icon">→</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading / Generation Animation Page -->
+    <div id="loading-page" class="page">
+        <div class="loading-container">
+            <div class="loading-animation">
+                <div class="loading-map"></div>
+                <div class="loading-text">
+                    <p class="loading-step active" id="step1">🗺️ 正在规划最优路线...</p>
+                    <p class="loading-step" id="step2">🏨 正在匹配沿途酒店...</p>
+                    <p class="loading-step" id="step3">⭐ 正在分析用户评价...</p>
+                    <p class="loading-step" id="step4">✨ 正在生成个性化方案...</p>
+                </div>
+            </div>
+            <div class="loading-progress">
+                <div class="progress-bar"><div class="progress-fill"></div></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Planning Canvas -->
+    <div id="canvas-page" class="page">
+        <div class="canvas-layout">
+            <!-- Header -->
+            <header class="canvas-header">
+                <div class="header-left">
+                    <span class="logo-sm">✈️ AI旅行搭子</span>
+                    <span class="trip-title">AI正在为你规划...</span>
+                </div>
+                <div class="header-center">
+                    <div class="trip-summary-bar">
+                        <!-- Dynamic content filled by JS -->
+                    </div>
+                </div>
+                <div class="header-right">
+                    <div class="trip-meta">
+                        <!-- Dynamic content filled by JS -->
+                    </div>
+                </div>
+            </header>
+
+            <div class="canvas-body">
+                <!-- Left: Map -->
+                <div class="map-panel">
+                    <div id="map"></div>
+                </div>
+
+                <!-- Center: Trip Timeline -->
+                <div class="timeline-panel">
+                    <div class="timeline-scroll" id="timeline-container">
+                        <!-- Timeline items will be injected by JS -->
+                    </div>
+                    <!-- Bottom controls -->
+                    <div class="timeline-footer">
+                        <div class="preference-tags">
+                            <span class="pref-tag active" data-pref="comfort">🧘 舒适优先</span>
+                            <span class="pref-tag" data-pref="budget">💰 性价比</span>
+                            <span class="pref-tag" data-pref="scenic">🏔️ 风景优先</span>
+                            <span class="pref-tag" data-pref="convenient">📍 交通便利</span>
+                        </div>
+                        <div class="chat-input-area">
+                            <input type="text" id="chat-input" placeholder="补充需求，如：第二天想轻松一点..." />
+                            <button id="chat-send" class="btn-send">发送</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right: Detail Panel -->
+                <div class="detail-panel" id="detail-panel">
+                    <div class="detail-placeholder">
+                        <div class="placeholder-icon">👆</div>
+                        <p>点击行程中的景点或酒店</p>
+                        <p>查看详细信息</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
