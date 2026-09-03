@@ -1,0 +1,19 @@
+server.js
+  s_e597694a08365f::t_f83c036257efe4 193-195,207-208,214,216
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.43-trip",
+  "base_commit_sha": "b8edd8385bd330b5d40f69139744effd855fc0e2",
+  "prompts": {},
+  "sessions": {
+    "s_e597694a08365f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c9abbf39-6a58-4929-ae12-4f6250872a23",
+        "model": "MiniMax-M3"
+      },
+      "human_author": "lhaoyu <lhaoyu@trip.com>"
+    }
+  }
+}
