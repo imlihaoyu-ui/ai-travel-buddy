@@ -189,6 +189,61 @@ app.post('/api/generate', async (req, res) => {
     }
 });
 
+// ==================== TRIP STORAGE ====================
+const path = require('path');
+const fs = require('fs');
+
+const TRIPS_FILE = path.join(__dirname, 'data', 'trips.json');
+
+// Ensure data directory exists
+if (!fs.existsSync(path.join(__dirname, 'data'))) {
+    fs.mkdirSync(path.join(__dirname, 'data'));
+}
+if (!fs.existsSync(TRIPS_FILE)) {
+    fs.writeFileSync(TRIPS_FILE, '{}');
+}
+
+function readTrips() {
+    try {
+        return JSON.parse(fs.readFileSync(TRIPS_FILE, 'utf8'));
+    } catch (e) {
+        return {};
+    }
+}
+
+function writeTrips(trips) {
+    fs.writeFileSync(TRIPS_FILE, JSON.stringify(trips));
+}
+
+function generateTripId() {
+    return Math.random().toString(36).substring(2, 10) + Date.now().toString(36).slice(-4);
+}
+
+// Save trip → returns shareable ID
+app.post('/api/save', (req, res) => {
+    const { trip } = req.body;
+    if (!trip) return res.status(400).json({ error: 'No trip data' });
+
+    const id = generateTripId();
+    const trips = readTrips();
+    trips[id] = {
+        data: trip,
+        createdAt: new Date().toISOString()
+    };
+    writeTrips(trips);
+
+    console.log('[Save] Trip saved with ID:', id);
+    res.json({ success: true, id });
+});
+
+// Get saved trip
+app.get('/api/trip/:id', (req, res) => {
+    const trips = readTrips();
+    const trip = trips[req.params.id];
+    if (!trip) return res.status(404).json({ error: 'Trip not found' });
+    res.json(trip.data);
+});
+
 // ==================== CHAT ENDPOINT ====================
 app.post('/api/chat', async (req, res) => {
     const { message, currentTripData } = req.body;

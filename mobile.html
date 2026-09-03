@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>我的行程</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/mobile.css" />
+</head>
+<body>
+    <div id="loading-state" class="loading">
+        <div class="spinner"></div>
+        <p>正在加载行程...</p>
+    </div>
+
+    <div id="error-state" class="error-state" style="display:none">
+        <div class="error-icon">😕</div>
+        <h2>找不到行程</h2>
+        <p>这个链接可能已过期或无效</p>
+    </div>
+
+    <div id="trip-content" style="display:none">
+        <!-- Trip Header -->
+        <header class="trip-header">
+            <h1 id="trip-title">行程标题</h1>
+            <div class="trip-meta">
+                <span id="trip-dates"></span>
+                <span id="trip-mode"></span>
+                <span id="trip-travelers"></span>
+            </div>
+            <div class="trip-stats">
+                <span id="total-days">0</span>天
+                <span id="total-hotels">0</span>家酒店
+                <span id="total-attractions">0</span>个景点
+            </div>
+        </header>
+
+        <!-- Map (collapsed by default) -->
+        <div class="map-section" id="map-section">
+            <div id="map"></div>
+        </div>
+
+        <!-- Timeline -->
+        <div class="timeline" id="timeline"></div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="js/mobile.js"></script>
+</body>
+</html>

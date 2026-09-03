@@ -1013,3 +1013,69 @@ async function handleChat() {
         document.getElementById('chat-send').disabled = false;
     }
 }
+
+// ==================== SAVE TO PHONE ====================
+async function saveTripToPhone() {
+    if (!currentTripData) return;
+
+    const btn = document.getElementById('save-btn');
+    btn.disabled = true;
+    btn.textContent = '⏱保存中...';
+
+    try {
+        const response = await fetch('/api/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ trip: currentTripData })
+        });
+
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || '保存失败');
+
+        const tripId = result.id;
+        const shareUrl = `${window.location.origin}/mobile.html?id=${tripId}`;
+
+        // Show modal
+        document.getElementById('save-modal').style.display = 'flex';
+        document.getElementById('share-url').value = shareUrl;
+
+        // Generate QR code
+        const qrContainer = document.getElementById('qr-container');
+        qrContainer.innerHTML = '';
+
+        try {
+            const qr = qrcode(0, 'M');
+            qr.addData(shareUrl);
+            qr.make();
+            qrContainer.innerHTML = qr.createImgTag(5, 8);
+        } catch (e) {
+            // Fallback: show URL as text
+            qrContainer.innerHTML = '<div style="padding:20px;text-align:center;word-break:break-all">' + shareUrl + '</div>';
+        }
+
+    } catch (error) {
+        alert('保存失败：' + error.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '📱 保存到手机';
+    }
+}
+
+function closeSaveModal() {
+    document.getElementById('save-modal').style.display = 'none';
+}
+
+function copyShareUrl() {
+    const input = document.getElementById('share-url');
+    input.select();
+    document.execCommand('copy');
+    const btn = event.target;
+    const original = btn.textContent;
+    btn.textContent = '✓ 已复制';
+    setTimeout(() => btn.textContent = original, 1500);
+}
+
+// Make functions globally available
+window.closeSaveModal = closeSaveModal;
+window.copyShareUrl = copyShareUrl;
+window.saveTripToPhone = saveTripToPhone;
