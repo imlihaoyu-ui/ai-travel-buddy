@@ -190,30 +190,9 @@ app.post('/api/generate', async (req, res) => {
 });
 
 // ==================== TRIP STORAGE ====================
-const path = require('path');
-const fs = require('fs');
-
-const TRIPS_FILE = path.join(__dirname, 'data', 'trips.json');
-
-// Ensure data directory exists
-if (!fs.existsSync(path.join(__dirname, 'data'))) {
-    fs.mkdirSync(path.join(__dirname, 'data'));
-}
-if (!fs.existsSync(TRIPS_FILE)) {
-    fs.writeFileSync(TRIPS_FILE, '{}');
-}
-
-function readTrips() {
-    try {
-        return JSON.parse(fs.readFileSync(TRIPS_FILE, 'utf8'));
-    } catch (e) {
-        return {};
-    }
-}
-
-function writeTrips(trips) {
-    fs.writeFileSync(TRIPS_FILE, JSON.stringify(trips));
-}
+// Use in-memory storage (works on any platform, no filesystem dependencies)
+// Note: trips persist only for the lifetime of the server process
+const tripsStore = new Map();
 
 function generateTripId() {
     return Math.random().toString(36).substring(2, 10) + Date.now().toString(36).slice(-4);
@@ -225,23 +204,16 @@ app.post('/api/save', (req, res) => {
     if (!trip) return res.status(400).json({ error: 'No trip data' });
 
     const id = generateTripId();
-    const trips = readTrips();
-    trips[id] = {
-        data: trip,
-        createdAt: new Date().toISOString()
-    };
-    writeTrips(trips);
-
-    console.log('[Save] Trip saved with ID:', id);
+    tripsStore.set(id, trip);
+    console.log('[Save] Trip saved with ID:', id, '(Total:', tripsStore.size, 'trips in memory)');
     res.json({ success: true, id });
 });
 
 // Get saved trip
 app.get('/api/trip/:id', (req, res) => {
-    const trips = readTrips();
-    const trip = trips[req.params.id];
+    const trip = tripsStore.get(req.params.id);
     if (!trip) return res.status(404).json({ error: 'Trip not found' });
-    res.json(trip.data);
+    res.json(trip);
 });
 
 // ==================== CHAT ENDPOINT ====================
