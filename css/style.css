@@ -937,6 +937,36 @@ body {
     background: var(--primary-dark);
 }
 
+/* Quick chat shortcuts */
+.quick-chat-row {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+}
+
+.quick-chat-btn {
+    padding: 5px 10px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+
+.quick-chat-btn:hover {
+    background: var(--primary-light);
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+.quick-chat-btn:active {
+    transform: scale(0.96);
+}
+
 /* ==================== DETAIL PANEL ==================== */
 .detail-panel {
     width: 320px;
@@ -1152,6 +1182,39 @@ body {
 }
 
 .btn-save-mobile:hover {
+    background: rgba(255,255,255,0.3);
+}
+
+.badge-new {
+    background: #ef4444;
+    color: white;
+    font-size: 9px;
+    padding: 1px 5px;
+    border-radius: 8px;
+    margin-left: 6px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    animation: pulseBadge 2s infinite;
+}
+
+@keyframes pulseBadge {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+}
+
+.btn-export {
+    background: rgba(255,255,255,0.15);
+    color: white;
+    border: 1px solid rgba(255,255,255,0.3);
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    margin-left: 6px;
+    transition: background 0.2s;
+}
+
+.btn-export:hover {
     background: rgba(255,255,255,0.3);
 }
 

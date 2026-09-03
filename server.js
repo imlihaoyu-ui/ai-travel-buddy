@@ -57,6 +57,7 @@ const SYSTEM_PROMPT = `你是一位资深旅行规划师，专门为自驾游和
             "ticketOptions": [
               {"type": "票种名称", "price": "价格", "note": "备注"}
             ],
+            "ticketPrice": 门票单张成人票价格（数字，如 180）,
             "needReserve": false,
             "reserveNote": "",
             "coords": [纬度, 经度],

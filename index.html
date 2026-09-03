@@ -158,8 +158,15 @@
                     <div class="trip-meta">
                         <!-- Dynamic content filled by JS -->
                     </div>
-                    <button class="btn-save-mobile" onclick="saveTripToPhone()" id="save-btn">
+                    <button class="btn-save-mobile" onclick="saveTripToPhone()" id="save-btn" title="扫码后在手机上查看，支持一键导航">
                         📱 保存到手机
+                        <span class="badge-new">NEW</span>
+                    </button>
+                    <button class="btn-export" onclick="exportPDF()" title="下载行程为PDF">
+                        📄 PDF
+                    </button>
+                    <button class="btn-export" onclick="exportCalendar()" title="导出为日历事件">
+                        📅 日历
                     </button>
                 </div>
             </header>
@@ -182,6 +189,12 @@
                             <span class="pref-tag" data-pref="budget">💰 性价比</span>
                             <span class="pref-tag" data-pref="scenic">🏔️ 风景优先</span>
                             <span class="pref-tag" data-pref="convenient">📍 交通便利</span>
+                        </div>
+                        <div class="quick-chat-row">
+                            <button class="quick-chat-btn" data-msg="把预算降一半">💰 预算减半</button>
+                            <button class="quick-chat-btn" data-msg="加一天行程">➕ 加一天</button>
+                            <button class="quick-chat-btn" data-msg="带3岁孩子，重新规划">👶 带小孩</button>
+                            <button class="quick-chat-btn" data-msg="换更便宜的酒店">🏨 便宜酒店</button>
                         </div>
                         <div class="chat-input-area">
                             <input type="text" id="chat-input" placeholder="补充需求，如：第二天想轻松一点..." />

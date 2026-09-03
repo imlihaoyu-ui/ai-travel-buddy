@@ -193,13 +193,40 @@ function updateHeader() {
         if (d.schedule) return sum + d.schedule.filter(s => s.type === 'attraction').length;
         return sum + (d.attractions?.length || 0);
     }, 0);
-    const totalBudget = data.days.reduce((sum, d) => sum + (d.hotel?.price || 0), 0);
+    const hotelTotal = data.days.reduce((sum, d) => sum + (d.hotel?.price || 0), 0);
+
+    // Calculate ticket total
+    let ticketTotal = 0;
+    data.days.forEach(d => {
+        const items = d.schedule || [];
+        items.forEach(item => {
+            if (item.type === 'attraction' && item.data?.ticketPrice) {
+                ticketTotal += parseInt(item.data.ticketPrice) || 0;
+            }
+        });
+    });
+
+    // Calculate transport total (estimate based on commute costs)
+    let transportTotal = 0;
+    data.days.forEach(d => {
+        const items = d.schedule || [];
+        items.forEach(item => {
+            if (item.type === 'commute' && item.cost) {
+                const match = item.cost.match(/\d+/);
+                if (match) transportTotal += parseInt(match[0]) || 0;
+            }
+        });
+    });
+
+    const grandTotal = hotelTotal + ticketTotal + transportTotal;
 
     document.querySelector('.trip-summary-bar').innerHTML = `
         <span class="summary-item">📅 ${totalDays}天${totalNights}晚</span>
         <span class="summary-item">🏨 ${uniqueHotels}家酒店</span>
         <span class="summary-item">📍 ${totalAttractions}个景点</span>
-        <span class="summary-item total">💰 住宿预算 ¥${totalBudget.toLocaleString()}</span>
+        <span class="summary-item budget-item" title="住宿¥${hotelTotal.toLocaleString()} + 门票¥${ticketTotal.toLocaleString()} + 交通¥${transportTotal.toLocaleString()}">
+            💰 总预算 ¥${grandTotal.toLocaleString()}
+        </span>
     `;
 
     // Update right meta
@@ -673,6 +700,17 @@ function bindTimelineEvents() {
     document.getElementById('chat-input').addEventListener('keydown', (e) => {
         if (e.key === 'Enter') handleChat();
     });
+
+    // Quick chat shortcut buttons
+    document.querySelectorAll('.quick-chat-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const msg = btn.dataset.msg;
+            if (msg) {
+                document.getElementById('chat-input').value = msg;
+                handleChat();
+            }
+        });
+    });
 }
 
 function toggleExpand(toggle) {
@@ -1079,3 +1117,185 @@ function copyShareUrl() {
 window.closeSaveModal = closeSaveModal;
 window.copyShareUrl = copyShareUrl;
 window.saveTripToPhone = saveTripToPhone;
+
+// ==================== EXPORT FEATURES ====================
+
+// Generate a printable HTML version that opens in new window
+function generatePrintableHTML(trip) {
+    if (!trip) return '';
+    let html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${trip.title || '行程'}</title>
+        <style>
+                body { font-family: -apple-system, sans-serif; max-width: 800px; margin: 0 auto; padding: 40px; color: #1e293b; line-height: 1.6; }
+                h1 { color: #2563eb; border-bottom: 3px solid #2563eb; padding-bottom: 12px; }
+                .summary { background: #eff6ff; padding: 16px; border-radius: 8px; margin: 20px 0; }
+                .day { page-break-inside: avoid; margin: 24px 0; padding: 16px; border: 1px solid #e2e8f0; border-radius: 8px; }
+                .day-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+                .day-badge { background: #2563eb; color: white; padding: 6px 12px; border-radius: 50%; font-weight: bold; }
+                .item { padding: 8px 0; border-bottom: 1px dashed #e2e8f0; }
+                .hotel { background: #f0fdf4; padding: 12px; border-radius: 6px; margin-top: 12px; }
+                .time { color: #64748b; font-size: 13px; }
+                .transport { background: #fffbeb; padding: 10px; border-radius: 6px; margin: 8px 0; }
+                .footer { margin-top: 40px; text-align: center; color: #94a3b8; font-size: 12px; }
+                @media print { .no-print { display: none; } }
+            </style></head><body>
+        <h1>✈️ ${trip.title || '我的行程'}</h1>
+        <div class="summary">
+                <strong>${trip.dateRange || ''}</strong> · ${trip.mode || ''} · ${trip.travelers || ''}
+                <div style="margin-top:8px;font-size:13px;color:#64748b">由 AI旅行搭子 生成 · ${new Date().toLocaleDateString('zh-CN')}</div>
+            </div>`;
+
+    trip.days?.forEach(day => {
+        html += `<div class="day">
+            <div class="day-header">
+                <div class="day-badge">D${day.day}</div>
+                <div><strong>${day.title || ''}</strong><br><span class="time">${day.route || ''}${day.driving ? ' · ' + day.driving : ''}</span></div>
+            </div>`;
+
+        const items = day.schedule || [];
+        items.forEach(item => {
+            if (item.type === 'attraction' && item.data) {
+                html += `<div class="item">
+                    <strong>${item.data.icon || '📍'} ${item.data.name}</strong>
+                    <div class="time">${item.startTime || ''} · ${item.data.duration || ''} · ${item.data.ticket || ''}</div>
+                    ${item.data.description ? `<div style="font-size:13px;color:#64748b;margin-top:4px">${item.data.description}</div>` : ''}
+                </div>`;
+            } else if (item.type === 'commute') {
+                html += `<div style="font-size:12px;color:#94a3b8;padding:4px 0">${item.icon || '🚶'} ${item.mode} · ${item.duration}${item.cost ? ' · ' + item.cost : ''}</div>`;
+            } else if (item.type === 'transport' && item.data) {
+                html += `<div class="transport">
+                    <strong>${item.data.mode || '🚗 自驾'}</strong> · ${item.data.from} → ${item.data.to}<br>
+                    <span class="time">${item.data.distance || ''} · ${item.data.duration || ''}</span>
+                    ${item.data.departSuggestion ? `<br>${item.data.departSuggestion}` : ''}
+                </div>`;
+            }
+        });
+
+        if (day.hotel) {
+            html += `<div class="hotel">
+                <strong>🏨 ${day.hotel.name}</strong> · ¥${day.hotel.price}/晚<br>
+                <span style="font-size:13px;color:#64748b">${day.hotel.reason || ''}</span>
+            </div>`;
+        }
+        html += `</div>`;
+    });
+
+    html += `<div class="footer">由 AI旅行搭子 生成 · 携程创新大赛参赛作品</div>`;
+    html += `<div class="no-print" style="text-align:center;margin-top:30px"><button onclick="window.print()" style="padding:12px 24px;background:#2563eb;color:white;border:none;border-radius:6px;font-size:14px;cursor:pointer">🖨️ 打印 / 另存为 PDF</button></div>`;
+    html += `</body></html>`;
+    return html;
+}
+
+function exportPDF() {
+    if (!currentTripData) return;
+    const html = generatePrintableHTML(currentTripData);
+    const w = window.open('', '_blank');
+    w.document.write(html);
+    w.document.close();
+    showToast('📄 行程页面已打开，点"打印"可另存为PDF');
+}
+
+function exportCalendar() {
+    if (!currentTripData) return;
+    let ics = 'BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//AI Travel Buddy//ZH\n';
+    let day = 1;
+    currentTripData.days?.forEach((d, i) => {
+        const dateStr = d.date?.match(/\d+月\d+日?/)?.[0];
+        const date = parseTravelDate(dateStr, currentTripData.dateRange);
+        if (!date) return;
+
+        const items = d.schedule || [];
+        items.forEach(item => {
+            if (item.type === 'attraction' && item.data) {
+                const startTime = parseTime(item.startTime) || '09:00';
+                const durationMin = parseDurationMin(item.data.duration);
+                const startDate = combineDateTime(date, startTime);
+                const endDate = addMinutes(startDate, durationMin);
+
+                ics += `BEGIN:VEVENT\n`;
+                ics += `UID:attraction-${day}-${i}@aitravelbuddy\n`;
+                ics += `SUMMARY:${item.data.icon || '📍'} ${item.data.name}\n`;
+                ics += `DTSTART:${formatICSDate(startDate)}\n`;
+                ics += `DTEND:${formatICSDate(endDate)}\n`;
+                ics += `DESCRIPTION:${item.data.description || ''}\\n时长:${item.data.duration}\\n门票:${item.data.ticket || ''}\n`;
+                ics += `LOCATION:${item.data.coords?.join(',') || ''}\n`;
+                ics += `END:VEVENT\n`;
+                day++;
+            }
+        });
+    });
+    ics += 'END:VCALENDAR\n';
+
+    const blob = new Blob([ics], { type: 'text/calendar' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${currentTripData.title || '行程'}.ics`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('📅 日历文件已下载，双击导入到手机日历');
+}
+
+// Calendar helpers
+function parseTravelDate(str, rangeStr) {
+    if (!str) return null;
+    const m = str.match(/(\d+)月(\d+)/);
+    if (!m) return null;
+    const year = new Date().getFullYear();
+    // Try rangeStr to get start month
+    let month = parseInt(m[1]);
+    if (rangeStr) {
+        const rangeMatch = rangeStr.match(/(\d+)\.(\d+)\s*[-~]\s*(\d+)\.(\d+)/);
+        if (rangeMatch) {
+            const startMonth = parseInt(rangeMatch[2]);
+            // Adjust year if needed
+            const today = new Date();
+            year = today.getFullYear();
+        }
+    }
+    return new Date(year, month - 1, parseInt(m[2]));
+}
+
+function parseTime(timeStr) {
+    if (!timeStr) return null;
+    const m = timeStr.match(/(\d+):(\d+)/);
+    return m ? `${m[1]}:${m[2]}` : null;
+}
+
+function parseDurationMin(duration) {
+    if (!duration) return 90;
+    const m = duration.match(/(\d+(?:\.\d+)?)h/);
+    if (m) return Math.round(parseFloat(m[1]) * 60);
+    const m2 = duration.match(/(\d+)min/);
+    if (m2) return parseInt(m2[1]);
+    return 90;
+}
+
+function combineDateTime(date, time) {
+    const [h, m] = time.split(':').map(Number);
+    const d = new Date(date);
+    d.setHours(h, m, 0, 0);
+    return d;
+}
+
+function addMinutes(date, min) {
+    return new Date(date.getTime() + min * 60000);
+}
+
+function formatICSDate(date) {
+    return date.toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
+}
+
+function showToast(msg) {
+    const toast = document.createElement('div');
+    toast.className = 'purchase-toast';
+    toast.innerHTML = `<div class="toast-icon">💡</div><div class="toast-text"><div class="toast-title">${msg}</div></div>`;
+    document.body.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add('show'));
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 300);
+    }, 2500);
+}
+
+window.exportPDF = exportPDF;
+window.exportCalendar = exportCalendar;
