@@ -1,0 +1,31 @@
+js/app.js
+  s_e597694a08365f::t_af2f5aa94408f6 196-221,227-229
+  s_e597694a08365f::t_98b8cab22bbbeb 703-713
+  s_e597694a08365f::t_aad7c01277de30 1120-1301
+css/style.css
+  s_e597694a08365f::t_54cd353aff92a9 940-969
+  s_e597694a08365f::t_9bbb21dc762577 1188-1204
+  s_e597694a08365f::t_c1d21c9cee00f3 1205-1220
+server.js
+  s_e597694a08365f::t_5118c9cf4dc4b3 60
+index.html
+  s_e597694a08365f::t_b0d9cd06555f77 161,163
+  s_e597694a08365f::t_59da64906a063a 165-169
+  s_e597694a08365f::t_b24a25d85a4cce 193-198
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.43-trip",
+  "base_commit_sha": "d34cfe6a316f460288e3d46708fc778cabaaa20f",
+  "prompts": {},
+  "sessions": {
+    "s_e597694a08365f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c9abbf39-6a58-4929-ae12-4f6250872a23",
+        "model": "MiniMax-M3"
+      },
+      "human_author": "lhaoyu <lhaoyu@trip.com>"
+    }
+  }
+}
