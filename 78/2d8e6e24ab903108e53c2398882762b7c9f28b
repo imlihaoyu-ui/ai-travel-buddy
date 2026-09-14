@@ -1,0 +1,28 @@
+js/app.js
+  s_e597694a08365f::t_beeac95a8fab49 244-246
+  s_e597694a08365f::t_326667db1e2fa8 479
+  s_e597694a08365f::t_d8fe850a7f9ee2 754,768
+  s_e597694a08365f::t_f183c7c981addb 433-434
+  s_e597694a08365f::t_be305898a8e5db 349-351,353-364,366-371,373-384,386-390,392,394-415,417-419,422-432,438-446,449,451,454-460,463,465-477,480-512
+  s_e597694a08365f::t_118fcec76bd65c 447
+index.html
+  s_e597694a08365f::t_7447b913c1f2f1 161-163,166-168
+css/style.css
+  s_e597694a08365f::t_8eec16c7d247c3 1171-1177,1179-1183,1185-1200,1204-1214,1221,1226
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.44-trip",
+  "base_commit_sha": "782d8e6e24ab903108e53c2398882762b7c9f28b",
+  "prompts": {},
+  "sessions": {
+    "s_e597694a08365f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c9abbf39-6a58-4929-ae12-4f6250872a23",
+        "model": "ep-5e9quh5a"
+      },
+      "human_author": "lhaoyu <lhaoyu@trip.com>"
+    }
+  }
+}
