@@ -241,9 +241,10 @@ function updateHeader() {
 const DAY_COLORS = ['#4285F4','#34A853','#FBBC05','#EA4335','#8E24AA','#00ACC1','#FF7043','#5C6BC0','#26A69A','#FFA726'];
 let dayLayers = []; // store per-day route layers for highlight
 let isChinaMap = false; // 是否使用高德中文地图
-let activeDay = null; // 当前高亮的天（null = 默认整体视图）
-let dayNodeMarkers = []; // 胶囊节点
-let dayLinkLines = []; // 连线（含箭头）
+let activeDay = null; // 当前高亮的天（null = 默认 D1 高亮）
+let dayNodeMarkers = []; // 图钉
+let dayLinkLines = []; // 线段（含箭头、交通图标）
+let dayLabelMarkers = []; // D 标签
 
 // WGS84 → GCJ02 坐标转换（高德/百度坐标系）
 function wgs84ToGcj02(lng, lat) {
@@ -291,10 +292,13 @@ function toMapCoord(coord) {
     return coord;
 }
 
-function initMap() {
+async function initMap() {
     if (map) { map.remove(); map = null; }
     markers = [];
     dayLayers = [];
+    dayNodeMarkers = [];
+    dayLinkLines = [];
+    dayLabelMarkers = [];
 
     map = L.map('map', {
         zoomControl: false,
@@ -347,119 +351,311 @@ function initMap() {
     if (!currentTripData) return;
 
     activeDay = null;
-    dayNodeMarkers = [];
-    dayLinkLines = [];
+    dayNodeMarkers = [];  // 存所有图钉 { day, marker }
+    dayLinkLines = [];    // 存所有线段 { day, line, arrows[], iconMarker }
+    dayLabelMarkers = []; // 存 D 标签 { day, marker }
 
-    // 1. 收集每天的关键节点（胶囊）：优先用酒店位置，否则当天第一个景点
-    const dayNodes = [];
+    // 1. 提取所有图钉（景点+酒店）和线段（天内+天间）
+    const allPins = [];     // { day, name, coords, type }
+    const allSegments = []; // { day, from, to, icon, isFlight, isWalk }
+
     currentTripData.days.forEach((day) => {
-        let nodeCoord = null;
+        const dayPins = [];
+        const items = day.schedule || [];
+
+        items.forEach(item => {
+            if (item.type === 'attraction' && item.data?.coords?.length === 2) {
+                dayPins.push({ day: day.day, name: item.data.name, coords: item.data.coords, type: 'attraction' });
+            }
+        });
         if (day.hotel?.coords?.length === 2) {
-            nodeCoord = day.hotel.coords;
-        } else if (day.schedule) {
-            const firstAttr = day.schedule.find(s => s.type === 'attraction' && s.data?.coords?.length === 2);
-            if (firstAttr) nodeCoord = firstAttr.data.coords;
-        } else if (day.attractions?.length) {
-            const first = day.attractions.find(a => a.coords?.length === 2);
-            if (first) nodeCoord = first.coords;
+            dayPins.push({ day: day.day, name: day.hotel.name, coords: day.hotel.coords, type: 'hotel' });
         }
-        if (nodeCoord) {
-            dayNodes.push({
+
+        allPins.push(...dayPins);
+
+        // 当天内线段
+        for (let i = 0; i < dayPins.length - 1; i++) {
+            let icon = '🚗', isFlight = false, isWalk = false;
+            const fromName = dayPins[i].name;
+            for (let j = 0; j < items.length - 1; j++) {
+                const cur = items[j], next = items[j + 1];
+                if (cur.type === 'attraction' && next.type === 'commute' && cur.data?.name === fromName) {
+                    icon = next.icon || getIconByMode(next.mode);
+                    isFlight = /飞机|✈️|航班/.test(next.mode || '');
+                    isWalk = /步行|走路/.test(next.mode || '');
+                    break;
+                }
+            }
+            allSegments.push({
                 day: day.day,
-                title: day.title,
-                coord: toMapCoord(nodeCoord)
+                from: dayPins[i].coords,
+                to: dayPins[i + 1].coords,
+                icon, isFlight, isWalk
             });
         }
     });
 
-    // 2. 绘制直线连线 + 箭头（统一蓝色）
-    for (let i = 0; i < dayNodes.length - 1; i++) {
-        const from = dayNodes[i];
-        const to = dayNodes[i + 1];
-        const line = L.polyline([from.coord, to.coord], {
-            color: '#2563eb',
-            weight: 2.5,
-            opacity: 0.65,
-            lineJoin: 'round'
+    // 天间线段
+    for (let i = 0; i < currentTripData.days.length - 1; i++) {
+        const todayPins = allPins.filter(p => p.day === currentTripData.days[i].day);
+        const tomorrowPins = allPins.filter(p => p.day === currentTripData.days[i + 1].day);
+        if (todayPins.length && tomorrowPins.length) {
+            const from = todayPins[todayPins.length - 1];
+            const to = tomorrowPins[0];
+            let icon = '🚗', isFlight = false, isWalk = false;
+            const tomorrowItems = currentTripData.days[i + 1].schedule || [];
+            const transportItem = tomorrowItems.find(s => s.type === 'transport' && s.data);
+            if (transportItem) {
+                icon = getIconByMode(transportItem.data.mode);
+                isFlight = /飞机|✈️|航班/.test(transportItem.data.mode || '');
+            }
+            allSegments.push({
+                day: currentTripData.days[i].day,
+                from: from.coords, to: to.coords,
+                icon, isFlight, isWalk
+            });
+        }
+    }
+
+    // 2. 异步获取每段真实路线（自驾/步行用 OSRM，飞机/火车用弧线）
+    await Promise.all(allSegments.map(async (seg) => {
+        if (seg.isFlight) {
+            seg.routeCoords = generateArcCoords(seg.from, seg.to); // 用原始 WGS84
+        } else if (seg.isWalk || seg.icon === '🚶') {
+            const route = await fetchOSRMRoute(seg.from, seg.to, 'foot');
+            seg.routeCoords = route || [seg.from, seg.to];
+        } else {
+            const route = await fetchOSRMRoute(seg.from, seg.to, 'driving');
+            seg.routeCoords = route || [seg.from, seg.to];
+        }
+    }));
+
+    // 3. 绘制图钉（简洁 icon：景点=📍，酒店=🏨）
+    allPins.forEach(pin => {
+        const coord = toMapCoord(pin.coords);
+        const isHotel = pin.type === 'hotel';
+        const pinMarker = L.marker(coord, {
+            zIndexOffset: 100, // 低于 D 标签
+            icon: L.divIcon({
+                className: 'map-pin',
+                html: `<div style="
+                    width: 28px;
+                    height: 28px;
+                    background: white;
+                    border: 2.5px solid ${isHotel ? '#10b981' : '#2563eb'};
+                    border-radius: 50%;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: ${isHotel ? '14px' : '12px'};
+                    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+                    font-family: Inter, sans-serif;
+                ">${isHotel ? '🏨' : '📍'}</div>`,
+                iconSize: [28, 28],
+                iconAnchor: [14, 14]
+            })
+        }).addTo(map);
+        pinMarker.bindTooltip(`D${pin.day} · ${pin.name}`, { direction: 'top', offset: [0, -14], className: 'map-tooltip' });
+        // 点击图钉：高亮当天 + 滚动卡片
+        pinMarker.on('click', () => {
+            highlightDay(pin.day);
+            scrollToDay(pin.day);
+        });
+        dayNodeMarkers.push({ day: pin.day, marker: pinMarker, coord });
+    });
+
+    // 4. 绘制线段（水管样式：粗线 + 密集箭头）+ 交通图标
+    allSegments.forEach((seg) => {
+        const routeCoords = (seg.routeCoords || [seg.from, seg.to]).map(toMapCoord);
+        const color = '#2563eb';
+
+        // 水管粗线（去掉箭头，改用交通图标指示方向）
+        const line = L.polyline(routeCoords, {
+            color: color,
+            weight: 5,
+            opacity: 0.75,
+            lineJoin: 'round',
+            lineCap: 'round'
         }).addTo(map);
 
-        // 箭头（方向指示）
-        const midLat = (from.coord[0] + to.coord[0]) / 2;
-        const midLng = (from.coord[1] + to.coord[1]) / 2;
-        const angle = Math.atan2(to.coord[0] - from.coord[0], to.coord[1] - from.coord[1]) * 180 / Math.PI;
-        const arrow = L.marker([midLat, midLng], {
+        // 交通方式图标（线段中点，挨着路线）
+        const midIdx = Math.floor(routeCoords.length / 2);
+        const midPt = routeCoords[midIdx];
+        const iconMarker = L.marker(midPt, {
             icon: L.divIcon({
-                className: 'route-arrow',
+                className: 'transport-icon',
                 html: `<div style="
-                    color: #2563eb;
+                    width: 26px;
+                    height: 26px;
+                    background: white;
+                    border: 2px solid ${color};
+                    border-radius: 50%;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
                     font-size: 14px;
-                    font-weight: bold;
-                    transform: rotate(${-angle + 90}deg);
-                    text-shadow: 0 0 3px white, 0 0 3px white;
-                ">▶</div>`,
-                iconSize: [14, 14],
-                iconAnchor: [7, 7]
+                    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+                ">${seg.icon || '🚗'}</div>`,
+                iconSize: [26, 26],
+                iconAnchor: [13, 13]
             })
         }).addTo(map);
 
-        dayLinkLines.push({ fromDay: from.day, line, arrow });
-    }
+        // 点击线路：高亮当天 + 滚动卡片
+        line.on('click', () => {
+            highlightDay(seg.day);
+            scrollToDay(seg.day);
+        });
 
-    // 3. 绘制胶囊节点
-    dayNodes.forEach((node, index) => {
-        const placeName = extractPlaceName(node.title);
-        const marker = L.marker(node.coord, {
+        dayLinkLines.push({ day: seg.day, line, arrows: [], iconMarker });
+    });
+
+    // 5. 绘制 D 标签（默认只显示 D1，最高层级）
+    allPins.forEach(pin => {
+        if (pin.type !== 'attraction') return;
+        const firstAttrOfDay = allPins.find(p => p.day === pin.day && p.type === 'attraction');
+        if (firstAttrOfDay !== pin) return;
+        const coord = toMapCoord(pin.coords);
+        const labelMarker = L.marker([coord[0], coord[1]], {
+            zIndexOffset: 1000, // 最高层级，始终在顶层
             icon: L.divIcon({
-                className: 'day-capsule',
-                html: `<div class="capsule-inner" data-day="${node.day}" style="
+                className: 'day-label',
+                html: `<div style="
                     background: #2563eb;
                     color: white;
                     border: 2px solid white;
-                    border-radius: 14px;
-                    padding: 4px 10px;
+                    border-radius: 50%;
+                    width: 24px;
+                    height: 24px;
                     display: flex;
                     align-items: center;
-                    gap: 5px;
-                    font-size: 11px;
-                    font-weight: 600;
+                    justify-content: center;
+                    font-size: 10px;
+                    font-weight: 700;
                     box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-                    white-space: nowrap;
-                    cursor: pointer;
-                    font-family: Inter, 'Noto Sans SC', sans-serif;
-                ">
-                    <span style="background:rgba(255,255,255,0.25);border-radius:9px;padding:1px 6px;font-weight:700;">D${node.day}</span>
-                    <span>${placeName}</span>
-                </div>`,
-                iconSize: [130, 30],
-                iconAnchor: [65, 15]
+                    font-family: Inter, sans-serif;
+                ">D${pin.day}</div>`,
+                iconSize: [24, 24],
+                iconAnchor: [12, 12]
             })
         }).addTo(map);
-
-        marker.on('click', () => {
-            const dayNum = node.day;
-            if (activeDay === dayNum) {
-                // 再点一次取消高亮，回到整体
-                activeDay = null;
-                updateDayHighlight();
-                fitAllDays();
-            } else {
-                highlightDay(dayNum);
-                map.flyTo(node.coord, 9, { duration: 0.6 });
-            }
-        });
-
-        dayNodeMarkers.push({ day: node.day, marker, coord: node.coord });
+        dayLabelMarkers.push({ day: pin.day, marker: labelMarker, coord });
     });
 
-    // 4. 初始状态：默认 D1 深色，后续逐渐变淡（体现先后顺序）
+    // 6. 监听缩放：动态处理图标与 D 标签的重叠
+    map.on('zoomend', updatePinVisibility);
+
+    // 7. 初始状态：仅 D1 高亮，其余淡；仅 D1 标签显示
     updateDayHighlight();
+    updatePinVisibility();
     fitAllDays();
 
     function fitAllDays() {
-        if (dayNodes.length > 0) {
-            map.fitBounds(L.latLngBounds(dayNodes.map(n => n.coord)).pad(0.2));
+        if (allPins.length > 0) {
+            map.fitBounds(L.latLngBounds(allPins.map(p => toMapCoord(p.coords))).pad(0.15));
         }
     }
+}
+
+// OSRM 真实路线获取（自驾/步行按公路）
+async function fetchOSRMRoute(from, to, profile) {
+    // from/to 为 [lat, lng]，OSRM 需要 [lng, lat]
+    const url = `https://router.project-osrm.org/route/v1/${profile}/${from[1]},${from[0]};${to[1]},${to[0]}?overview=full&geometries=geojson`;
+    try {
+        const resp = await fetch(url, { signal: AbortSignal.timeout(5000) });
+        const data = await resp.json();
+        if (data.code === 'Ok' && data.routes?.length) {
+            return data.routes[0].geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+        }
+    } catch (e) {
+        console.log('[Route] OSRM failed:', e.message);
+    }
+    return null;
+}
+
+// 滚动卡片列表到对应天
+function scrollToDay(dayNum) {
+    const el = document.getElementById(`day-block-${dayNum}`);
+    const container = document.getElementById('timeline-container');
+    if (el && container) {
+        // 直接滚动时间线容器，避免影响整体页面
+        const top = el.offsetTop - container.offsetTop - 16;
+        container.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+    } else if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+}
+
+// 弧线生成（飞机跨越大距离）
+function generateArcCoords(from, to) {
+    const midLat = (from[0] + to[0]) / 2;
+    const midLng = (from[1] + to[1]) / 2;
+    // 垂直方向偏移量（按距离比例）
+    const dist = Math.sqrt(Math.pow(to[0] - from[0], 2) + Math.pow(to[1] - from[1], 2));
+    const offset = dist * 0.25;
+    // 垂直方向
+    const dx = to[1] - from[1];
+    const dy = to[0] - from[0];
+    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+    const ctrlLat = midLat + (dx / len) * offset;
+    const ctrlLng = midLng - (dy / len) * offset;
+
+    // 二次贝塞尔
+    const coords = [];
+    const steps = 30;
+    for (let t = 0; t <= 1; t += 1 / steps) {
+        const lat = (1 - t) * (1 - t) * from[0] + 2 * (1 - t) * t * ctrlLat + t * t * to[0];
+        const lng = (1 - t) * (1 - t) * from[1] + 2 * (1 - t) * t * ctrlLng + t * t * to[1];
+        coords.push([lat, lng]);
+    }
+    return coords;
+}
+
+// 沿线密集放方向箭头（水管内箭头样式：白色箭头嵌在蓝色管线上）
+function addDirectionArrows(lineCoords, color) {
+    const arrows = [];
+    // 水管样式：密集箭头（每段约 8-14 个，按路线长度）
+    const arrowCount = Math.min(14, Math.max(6, Math.floor(lineCoords.length / 3)));
+    for (let i = 1; i <= arrowCount; i++) {
+        const idx = Math.floor(lineCoords.length * i / (arrowCount + 1));
+        const p1 = lineCoords[Math.max(0, idx - 2)];
+        const p2 = lineCoords[Math.min(lineCoords.length - 1, idx + 1)];
+        const lat = lineCoords[idx][0];
+        const lng = lineCoords[idx][1];
+        const angle = Math.atan2(p2[0] - p1[0], p2[1] - p1[1]) * 180 / Math.PI;
+        const arrow = L.marker([lat, lng], {
+            icon: L.divIcon({
+                className: 'route-arrow',
+                html: `<div style="
+                    color: white;
+                    font-size: 10px;
+                    font-weight: bold;
+                    transform: rotate(${-angle + 90}deg);
+                    text-shadow: 0 1px 2px rgba(0,0,0,0.25);
+                    line-height: 1;
+                ">▶</div>`,
+                iconSize: [10, 10],
+                iconAnchor: [5, 5]
+            })
+        }).addTo(map);
+        arrows.push(arrow);
+    }
+    return arrows;
+}
+
+// 根据交通方式文本获取图标
+function getIconByMode(mode) {
+    if (!mode) return '🚗';
+    if (/步行|走路/.test(mode)) return '🚶';
+    if (/地铁/.test(mode)) return '🚇';
+    if (/公交/.test(mode)) return '🚌';
+    if (/打车|出租|taxi|的士/i.test(mode)) return '🚕';
+    if (/自驾|开车|汽车/.test(mode)) return '🚗';
+    if (/高铁|火车|动车/.test(mode)) return '🚄';
+    if (/飞机|航班/.test(mode)) return '✈️';
+    if (/轮船|渡轮|ferry/i.test(mode)) return '⛴️';
+    return '🚗';
 }
 
 // 提取地点短名（用于胶囊标签）
@@ -482,33 +678,75 @@ function highlightDay(dayNum) {
     updateDayHighlight();
 }
 
-// 更新所有节点和连线的透明度
+// 更新所有图钉、线段、D标签的透明度
+// 规则：默认仅 D1 高亮（其他淡）；选中某天时仅当天高亮（其他淡）
 function updateDayHighlight() {
-    dayNodeMarkers.forEach((node, index) => {
-        const el = node.marker.getElement();
+    // 计算"当前应该高亮的天"
+    const highlightDayNum = activeDay === null ? 1 : activeDay;
+
+    // 图钉
+    dayNodeMarkers.forEach(pin => {
+        const el = pin.marker.getElement();
         if (!el) return;
-        let opacity;
-        if (activeDay === null) {
-            // 默认：D1 最深，依次变淡
-            opacity = Math.max(0.35, 1 - index * 0.13);
-        } else {
-            // 选中：当天 1.0，其他 0.3
-            opacity = node.day === activeDay ? 1.0 : 0.3;
-        }
+        const opacity = pin.day === highlightDayNum ? 1.0 : 0.25;
         el.style.opacity = opacity;
         el.style.transition = 'opacity 0.3s ease';
     });
 
+    // 线段 + 箭头 + 交通图标
     dayLinkLines.forEach(link => {
-        let opacity;
-        if (activeDay === null) {
-            opacity = 0.65;
-        } else {
-            opacity = link.fromDay === activeDay ? 0.8 : 0.2;
+        const opacity = link.day === highlightDayNum ? 0.9 : 0.18;
+        if (link.line && link.line.setStyle) link.line.setStyle({ opacity });
+
+        (link.arrows || []).forEach(arrow => {
+            const el = arrow.getElement();
+            if (el) { el.style.opacity = opacity; el.style.transition = 'opacity 0.3s ease'; }
+        });
+
+        if (link.iconMarker) {
+            const el = link.iconMarker.getElement();
+            if (el) { el.style.opacity = link.day === highlightDayNum ? 1.0 : 0.25; el.style.transition = 'opacity 0.3s ease'; }
         }
-        if (link.line.setStyle) link.line.setStyle({ opacity });
-        const arrowEl = link.arrow.getElement();
-        if (arrowEl) { arrowEl.style.opacity = opacity; arrowEl.style.transition = 'opacity 0.3s ease'; }
+    });
+
+    // D 标签：只显示高亮的那天的标签
+    dayLabelMarkers.forEach(label => {
+        const el = label.marker.getElement();
+        if (!el) return;
+        if (label.day === highlightDayNum) {
+            el.style.display = '';
+            el.style.opacity = 1;
+        } else {
+            el.style.display = 'none';
+        }
+    });
+}
+
+// 动态处理图钉与 D 标签的重叠：
+// 图钉离当天 D 标签太近（重叠>50%）时隐藏，放大分离后显示
+function updatePinVisibility() {
+    if (!map) return;
+    dayNodeMarkers.forEach(pin => {
+        const el = pin.marker.getElement();
+        if (!el) return;
+
+        // 找到同一天的 D 标签
+        const label = dayLabelMarkers.find(l => l.day === pin.day);
+        if (!label) { el.style.display = ''; return; }
+
+        // 计算屏幕像素距离
+        const p1 = map.latLngToContainerPoint(pin.coord);
+        const p2 = map.latLngToContainerPoint(label.coord);
+        const dist = Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
+
+        // 重叠阈值：D标签(24px) + pin(28px)，圆心距 < 26px 时重叠面积约 >50%
+        const overlapThreshold = 26;
+        if (dist < overlapThreshold) {
+            // 重叠：隐藏图钉（D 标签在最上层）
+            el.style.display = 'none';
+        } else {
+            el.style.display = '';
+        }
     });
 }
 
@@ -549,6 +787,19 @@ function generateCurve(p1, p2, index) {
         result.push([lat, lng]);
     }
     return result;
+}
+
+// 聚焦某一天（按天聚焦，不需要具体坐标）
+function focusDay(dayNum) {
+    if (!map || !currentTripData) return;
+    const day = currentTripData.days.find(d => d.day === dayNum);
+    if (!day) return;
+    const dayCoords = getDayCoords(day).map(toMapCoord);
+    if (dayCoords.length > 1) {
+        map.fitBounds(L.latLngBounds(dayCoords).pad(0.3), { maxZoom: 14, duration: 0.6 });
+    } else if (dayCoords.length === 1) {
+        map.flyTo(dayCoords[0], 14, { duration: 0.6 });
+    }
 }
 
 // Focus map on specific item with appropriate zoom
@@ -596,10 +847,11 @@ function renderTimeline() {
     currentTripData.days.forEach((day, index) => {
         const block = document.createElement('div');
         block.className = 'day-block';
+        block.id = `day-block-${day.day}`;
         block.style.animationDelay = `${index * 0.08}s`;
 
         let html = `
-            <div class="day-header">
+            <div class="day-header" data-day="${day.day}" style="cursor:pointer;" title="点击查看第${day.day}天行程">
                 <div class="day-badge">D${day.day}</div>
                 <div class="day-info">
                     <div class="day-date">${day.date} · ${day.title}</div>
@@ -739,6 +991,17 @@ function renderCommute(commute) {
 
 // ==================== EVENT BINDING ====================
 function bindTimelineEvents() {
+    // day-header 点击：地图聚焦 + 高亮当天
+    document.querySelectorAll('.day-header').forEach(header => {
+        header.addEventListener('click', () => {
+            const dayNum = parseInt(header.dataset.day);
+            if (dayNum) {
+                highlightDay(dayNum);
+                focusDay(dayNum);
+            }
+        });
+    });
+
     document.querySelectorAll('.attraction-item').forEach(item => {
         item.addEventListener('click', (e) => {
             if (e.target.classList.contains('expand-toggle')) {

@@ -412,8 +412,8 @@ body {
 
 /* Map Panel */
 .map-panel {
-    width: 35%;
-    min-width: 300px;
+    flex: 1.5;
+    min-width: 320px;
     border-right: 1px solid var(--border);
 }
 
@@ -480,6 +480,9 @@ body {
     gap: 12px;
     margin-bottom: 12px;
     padding: 8px 0;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
 }
 
 .day-badge {
@@ -1502,8 +1505,8 @@ body {
 /* Responsive - keep full layout for demo */
 @media (max-width: 1200px) {
     .map-panel {
-        width: 30%;
-        min-width: 200px;
+        flex: 1.4;
+        min-width: 220px;
     }
     .detail-panel {
         width: 260px;
@@ -1512,8 +1515,8 @@ body {
 
 @media (max-width: 768px) {
     .map-panel {
-        width: 25%;
-        min-width: 150px;
+        flex: 1.2;
+        min-width: 160px;
     }
     .detail-panel {
         width: 220px;
