@@ -1,0 +1,28 @@
+js/mobile.js
+  s_e597694a08365f::t_fd187eeb340d0e 175,177-181,183,185,189-193,195-202
+js/app.js
+  s_e597694a08365f::t_27e34f4f340f99 562-564,568,575
+  s_e597694a08365f::t_f3c2dae3d2a8bf 351,368-370
+  s_e597694a08365f::t_f8044222b10aa8 301-317,319-340
+  s_e597694a08365f::t_eb47f10acf528f 243-289
+  s_e597694a08365f::t_5cab3aa80a29a2 489-501
+server.js
+  s_e597694a08365f::t_375ada2316e1b6 112-119,125-127
+  s_e597694a08365f::t_556ad7d5088407 128-130
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.44-trip",
+  "base_commit_sha": "b67cac8f2e6d5b1c3adb068e2ac96f3513e4107c",
+  "prompts": {},
+  "sessions": {
+    "s_e597694a08365f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c9abbf39-6a58-4929-ae12-4f6250872a23",
+        "model": "ep-5e9quh5a"
+      },
+      "human_author": "lhaoyu <lhaoyu@trip.com>"
+    }
+  }
+}
