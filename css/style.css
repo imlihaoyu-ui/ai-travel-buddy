@@ -417,9 +417,24 @@ body {
     border-right: 1px solid var(--border);
 }
 
-/* Brighten OSM tiles when used as fallback */
+/* 国内：底层自然色底图（轻滤镜，保留绿地海水） */
+.amap-base {
+    filter: saturate(0.85) brightness(1.03) contrast(0.92);
+}
+
+/* 国内：上层灰色道路（透明背景，覆盖橙公路，无需滤镜） */
+.amap-roads {
+    /* 灰色道路层，不滤镜 */
+}
+
+/* 海外：ESRI 街道图，温和滤镜压橙 */
+.esri-street-tile {
+    filter: saturate(0.6) brightness(1.06) contrast(0.9);
+}
+
+/* OSM 回退底图：细节多，用更重的淡化避免"施工图"感 */
 .osm-bright {
-    filter: saturate(0.35) brightness(1.12) contrast(0.85);
+    filter: saturate(0.35) brightness(1.12) contrast(0.8);
 }
 
 /* Clean map tooltip */

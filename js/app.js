@@ -324,26 +324,30 @@ async function initMap() {
     isChinaMap = isInChina(centerLat, centerLng);
 
     if (isChinaMap) {
-        // 高德地图（中文标注，GCJ-02 坐标系）
-        const amapLayer = L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
-            maxZoom: 18, subdomains: '1234'
+        // 国内双层：底层自然色底图 + 上层灰色道路（透明背景覆盖橙公路）
+        const amapBase = L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
+            maxZoom: 18, subdomains: '1234', className: 'amap-base'
         });
-        amapLayer.addTo(map);
-        console.log('[Map] 使用高德中文地图');
+        const amapRoads = L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=7&x={x}&y={y}&z={z}', {
+            maxZoom: 18, subdomains: '1234', className: 'amap-roads'
+        });
+        amapBase.addTo(map);
+        amapRoads.addTo(map);
+        console.log('[Map] 国内：高德自然色底图 + 灰色道路层');
     } else {
-        // 国外：CartoDB Voyager（英文，简洁明亮），失败回退 OSM
-        const voyagerLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-            maxZoom: 19, subdomains: 'abcd'
+        // 海外：ESRI World Street（有自然色），温和滤镜压橙
+        const esriLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+            maxZoom: 19, className: 'esri-street-tile'
         });
         const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19, subdomains: 'abc', className: 'osm-bright'
         });
-        let voyagerFailed = false;
-        voyagerLayer.on('tileerror', () => {
-            if (!voyagerFailed) { voyagerFailed = true; map.removeLayer(voyagerLayer); osmLayer.addTo(map); }
+        let esriFailed = false;
+        esriLayer.on('tileerror', () => {
+            if (!esriFailed) { esriFailed = true; map.removeLayer(esriLayer); osmLayer.addTo(map); }
         });
-        voyagerLayer.addTo(map);
-        console.log('[Map] 使用英文地图');
+        esriLayer.addTo(map);
+        console.log('[Map] 海外：ESRI Street 街道图');
     }
 
     L.control.zoom({ position: 'topright' }).addTo(map);
@@ -688,14 +692,14 @@ function updateDayHighlight() {
     dayNodeMarkers.forEach(pin => {
         const el = pin.marker.getElement();
         if (!el) return;
-        const opacity = pin.day === highlightDayNum ? 1.0 : 0.25;
+        const opacity = pin.day === highlightDayNum ? 1.0 : 0.35;
         el.style.opacity = opacity;
         el.style.transition = 'opacity 0.3s ease';
     });
 
     // 线段 + 箭头 + 交通图标
     dayLinkLines.forEach(link => {
-        const opacity = link.day === highlightDayNum ? 0.9 : 0.18;
+        const opacity = link.day === highlightDayNum ? 0.95 : 0.35;
         if (link.line && link.line.setStyle) link.line.setStyle({ opacity });
 
         (link.arrows || []).forEach(arrow => {
@@ -705,7 +709,7 @@ function updateDayHighlight() {
 
         if (link.iconMarker) {
             const el = link.iconMarker.getElement();
-            if (el) { el.style.opacity = link.day === highlightDayNum ? 1.0 : 0.25; el.style.transition = 'opacity 0.3s ease'; }
+            if (el) { el.style.opacity = link.day === highlightDayNum ? 1.0 : 0.35; el.style.transition = 'opacity 0.3s ease'; }
         }
     });
 
