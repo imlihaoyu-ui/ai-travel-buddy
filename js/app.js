@@ -240,6 +240,53 @@ function updateHeader() {
 // ==================== MAP ====================
 const DAY_COLORS = ['#4285F4','#34A853','#FBBC05','#EA4335','#8E24AA','#00ACC1','#FF7043','#5C6BC0','#26A69A','#FFA726'];
 let dayLayers = []; // store per-day route layers for highlight
+let isChinaMap = false; // 是否使用高德中文地图
+
+// WGS84 → GCJ02 坐标转换（高德/百度坐标系）
+function wgs84ToGcj02(lng, lat) {
+    const a = 6378245.0;
+    const ee = 0.00669342162296594323;
+
+    function transformLat(x, y) {
+        let ret = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * Math.sqrt(Math.abs(x));
+        ret += (20.0 * Math.sin(6.0 * x * Math.PI) + 20.0 * Math.sin(2.0 * x * Math.PI)) * 2.0 / 3.0;
+        ret += (20.0 * Math.sin(y * Math.PI) + 40.0 * Math.sin(y / 3.0 * Math.PI)) * 2.0 / 3.0;
+        ret += (160.0 * Math.sin(y / 12.0 * Math.PI) + 320 * Math.sin(y * Math.PI / 30.0)) * 2.0 / 3.0;
+        return ret;
+    }
+
+    function transformLng(x, y) {
+        let ret = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * Math.sqrt(Math.abs(x));
+        ret += (20.0 * Math.sin(6.0 * x * Math.PI) + 20.0 * Math.sin(2.0 * x * Math.PI)) * 2.0 / 3.0;
+        ret += (20.0 * Math.sin(x * Math.PI) + 40.0 * Math.sin(x / 3.0 * Math.PI)) * 2.0 / 3.0;
+        ret += (150.0 * Math.sin(x / 12.0 * Math.PI) + 300.0 * Math.sin(x / 30.0 * Math.PI)) * 2.0 / 3.0;
+        return ret;
+    }
+
+    const dLat = transformLat(lng - 105.0, lat - 35.0);
+    const dLng = transformLng(lng - 105.0, lat - 35.0);
+    const radLat = lat / 180.0 * Math.PI;
+    let magic = Math.sin(radLat);
+    magic = 1 - ee * magic * magic;
+    const sqrtMagic = Math.sqrt(magic);
+    const dLatFinal = (dLat * 180.0) / ((a * (1 - ee)) / (magic * sqrtMagic) * Math.PI);
+    const dLngFinal = (dLng * 180.0) / (a / sqrtMagic * Math.cos(radLat) * Math.PI);
+    return [lng + dLngFinal, lat + dLatFinal];
+}
+
+function isInChina(lat, lng) {
+    return lng >= 72.0 && lng <= 136.0 && lat >= 17.0 && lat <= 54.0;
+}
+
+// 将 Leaflet 坐标 [lat, lng] 转换为当前地图坐标系
+function toMapCoord(coord) {
+    if (!coord || coord.length !== 2) return coord;
+    if (isChinaMap) {
+        const [lng, lat] = wgs84ToGcj02(coord[1], coord[0]);
+        return [lat, lng];
+    }
+    return coord;
+}
 
 function initMap() {
     if (map) { map.remove(); map = null; }
@@ -251,19 +298,46 @@ function initMap() {
         attributionControl: false
     }).setView([35, 105], 4);
 
-    // Bright clean tiles - CartoDB Voyager (Google Maps-like)
-    const voyagerLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-        maxZoom: 19, subdomains: 'abcd'
-    });
-    const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19, subdomains: 'abc', className: 'osm-bright'
-    });
+    // 判断行程是否在中国境内，决定用中文高德地图还是英文地图
+    let centerLat = 35, centerLng = 105;
+    if (currentTripData) {
+        const sampleCoords = [];
+        currentTripData.days.forEach(day => {
+            const items = day.schedule || [];
+            items.forEach(item => {
+                if (item.type === 'attraction' && item.data?.coords?.length === 2) sampleCoords.push(item.data.coords);
+            });
+            if (day.hotel?.coords?.length === 2) sampleCoords.push(day.hotel.coords);
+        });
+        if (sampleCoords.length > 0) {
+            centerLat = sampleCoords.reduce((s, c) => s + c[0], 0) / sampleCoords.length;
+            centerLng = sampleCoords.reduce((s, c) => s + c[1], 0) / sampleCoords.length;
+        }
+    }
+    isChinaMap = isInChina(centerLat, centerLng);
 
-    let voyagerFailed = false;
-    voyagerLayer.on('tileerror', () => {
-        if (!voyagerFailed) { voyagerFailed = true; map.removeLayer(voyagerLayer); osmLayer.addTo(map); }
-    });
-    voyagerLayer.addTo(map);
+    if (isChinaMap) {
+        // 高德地图（中文标注，GCJ-02 坐标系）
+        const amapLayer = L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
+            maxZoom: 18, subdomains: '1234'
+        });
+        amapLayer.addTo(map);
+        console.log('[Map] 使用高德中文地图');
+    } else {
+        // 国外：CartoDB Voyager（英文，简洁明亮），失败回退 OSM
+        const voyagerLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+            maxZoom: 19, subdomains: 'abcd'
+        });
+        const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19, subdomains: 'abc', className: 'osm-bright'
+        });
+        let voyagerFailed = false;
+        voyagerLayer.on('tileerror', () => {
+            if (!voyagerFailed) { voyagerFailed = true; map.removeLayer(voyagerLayer); osmLayer.addTo(map); }
+        });
+        voyagerLayer.addTo(map);
+        console.log('[Map] 使用英文地图');
+    }
 
     L.control.zoom({ position: 'topright' }).addTo(map);
 
@@ -274,7 +348,7 @@ function initMap() {
 
     // Draw per-day routes with different colors
     currentTripData.days.forEach((day, index) => {
-        const dayCoords = [];
+        let dayCoords = [];
 
         // Collect coords from schedule (new format) or attractions (old format)
         if (day.schedule) {
@@ -291,6 +365,9 @@ function initMap() {
         if (day.hotel?.coords?.length === 2) dayCoords.push(day.hotel.coords);
 
         if (dayCoords.length === 0) return;
+
+        // 转换到当前地图坐标系（高德 GCJ-02 或 国际 WGS-84）
+        dayCoords = dayCoords.map(toMapCoord);
         allCoords.push(...dayCoords);
 
         const color = DAY_COLORS[index % DAY_COLORS.length];
@@ -409,8 +486,19 @@ function initMap() {
     for (let i = 0; i < currentTripData.days.length - 1; i++) {
         const thisDay = currentTripData.days[i];
         const nextDay = currentTripData.days[i + 1];
-        const endCoord = thisDay.hotel?.coords || thisDay.attractions?.slice(-1)[0]?.coords;
-        const startCoord = nextDay.attractions?.[0]?.coords || nextDay.hotel?.coords;
+        let endCoord = thisDay.hotel?.coords;
+        if (!endCoord && thisDay.schedule) {
+            const attrs = thisDay.schedule.filter(s => s.type === 'attraction' && s.data?.coords?.length === 2);
+            endCoord = attrs.slice(-1)[0]?.data?.coords;
+        }
+        let startCoord = nextDay.hotel?.coords;
+        if (!startCoord && nextDay.schedule) {
+            const attrs = nextDay.schedule.filter(s => s.type === 'attraction' && s.data?.coords?.length === 2);
+            startCoord = attrs[0]?.data?.coords;
+        }
+        // 转换坐标系
+        endCoord = endCoord ? toMapCoord(endCoord) : null;
+        startCoord = startCoord ? toMapCoord(startCoord) : null;
         if (endCoord?.length === 2 && startCoord?.length === 2 &&
             (endCoord[0] !== startCoord[0] || endCoord[1] !== startCoord[1])) {
             L.polyline([endCoord, startCoord], {
@@ -471,17 +559,20 @@ function generateCurve(p1, p2, index) {
 function focusMapOn(coords, dayIndex) {
     if (!map || !coords || coords.length !== 2) return;
 
+    // 转换到当前地图坐标系
+    const mapCoord = toMapCoord(coords);
+
     if (dayIndex !== undefined && currentTripData) {
         const day = currentTripData.days.find(d => d.day === dayIndex);
         if (day) {
-            const dayCoordsAll = getDayCoords(day);
+            const dayCoordsAll = getDayCoords(day).map(toMapCoord);
             if (dayCoordsAll.length > 1) {
                 map.fitBounds(L.latLngBounds(dayCoordsAll).pad(0.3), { maxZoom: 14, duration: 0.6 });
                 return;
             }
         }
     }
-    map.flyTo(coords, 14, { duration: 0.6 });
+    map.flyTo(mapCoord, 14, { duration: 0.6 });
 }
 
 // Helper: get all coords from a day (works with both old and new format)

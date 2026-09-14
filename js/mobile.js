@@ -172,29 +172,34 @@ function renderNavButtons(coords, name) {
     `;
 }
 
-// 统一导航按钮：用 geo: scheme 唤起系统选择器（用户选已安装的地图）
+// 统一导航按钮：分平台唤起对应地图
 function handleNavigate(lat, lng, name) {
-    const geoUrl = `geo:${lat},${lng}?q=${lat},${lng}(${encodeURIComponent(name)})`;
+    const ua = navigator.userAgent;
+    const isWeChat = /MicroMessenger|wxwork/i.test(ua);
+    const isIOS = /iPhone|iPad|iPod/i.test(ua);
+    const isAndroid = /Android/i.test(ua);
+    const encodedName = encodeURIComponent(name);
 
-    // 微信/企业微信内置浏览器可能拦截 geo: scheme
-    const isWeChat = /MicroMessenger|wxwork/i.test(navigator.userAgent);
-
+    // 1. 微信/企业微信：geo: 会被拦截，直接跳高德
     if (isWeChat) {
-        // 微信内直接打开高德 web（系统会尝试唤起高德app）
-        window.location.href = `https://uri.amap.com/marker?position=${lng},${lat}&name=${encodeURIComponent(name)}&src=mypage&coordinate=gaode&callnative=1`;
+        window.location.href = `https://uri.amap.com/marker?position=${lng},${lat}&name=${encodedName}&src=mypage&coordinate=gaode&callnative=1`;
         return;
     }
 
-    // 标准浏览器：geo: scheme 会唤起系统选择器（Apple Maps / Google Maps / 高德 / 百度 等）
-    const startTime = Date.now();
-    window.location.href = geoUrl;
+    // 2. iOS：用 Apple Maps 标准链接（geo: 在 iOS Safari 上对 q 参数支持不稳定）
+    if (isIOS) {
+        window.location.href = `http://maps.apple.com/?daddr=${lat},${lng}&q=${encodedName}`;
+        return;
+    }
 
-    // 兜底：如果 2.5 秒后页面还在（geo: 未生效，如桌面浏览器），打开高德 web
-    setTimeout(() => {
-        if (!document.hidden) {
-            window.open(`https://uri.amap.com/marker?position=${lng},${lat}&name=${encodeURIComponent(name)}&src=mypage&coordinate=gaode&callnative=1`, '_blank');
-        }
-    }, 2500);
+    // 3. Android：用 geo: scheme 唤起系统选择器（用户选已安装地图）
+    if (isAndroid) {
+        window.location.href = `geo:${lat},${lng}?q=${lat},${lng}(${encodedName})`;
+        return;
+    }
+
+    // 4. 桌面浏览器：打开高德网页版
+    window.open(`https://uri.amap.com/marker?position=${lng},${lat}&name=${encodedName}&src=mypage&coordinate=gaode&callnative=1`, '_blank');
 }
 
 function renderMap(trip) {
