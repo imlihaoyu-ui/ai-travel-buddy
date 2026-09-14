@@ -1168,54 +1168,67 @@ body {
     font-weight: 500;
 }
 
-/* ==================== SAVE TO PHONE MODAL ==================== */
-.btn-save-mobile {
-    background: rgba(255,255,255,0.2);
+/* ==================== HEADER ACTION BUTTONS ==================== */
+.btn-save-mobile,
+.btn-export {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255,255,255,0.18);
     color: white;
-    border: 1px solid rgba(255,255,255,0.3);
-    padding: 6px 12px;
-    border-radius: 6px;
-    font-size: 12px;
+    border: 1px solid rgba(255,255,255,0.35);
+    padding: 7px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
     cursor: pointer;
-    margin-left: 12px;
-    transition: background 0.2s;
+    margin-left: 10px;
+    transition: all 0.2s;
+    white-space: nowrap;
+    line-height: 1;
+}
+
+.btn-save-mobile:hover,
+.btn-export:hover {
+    background: rgba(255,255,255,0.32);
+    transform: translateY(-1px);
+}
+
+.btn-save-mobile {
+    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+    border-color: transparent;
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.4);
 }
 
 .btn-save-mobile:hover {
-    background: rgba(255,255,255,0.3);
+    background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
+}
+
+.btn-emoji {
+    font-size: 16px;
+    line-height: 1;
+}
+
+.btn-label {
+    font-size: 13px;
+    font-weight: 600;
 }
 
 .badge-new {
     background: #ef4444;
     color: white;
     font-size: 9px;
-    padding: 1px 5px;
+    padding: 2px 5px;
     border-radius: 8px;
-    margin-left: 6px;
     font-weight: 700;
     letter-spacing: 0.5px;
     animation: pulseBadge 2s infinite;
+    line-height: 1;
 }
 
 @keyframes pulseBadge {
     0%, 100% { transform: scale(1); }
     50% { transform: scale(1.1); }
-}
-
-.btn-export {
-    background: rgba(255,255,255,0.15);
-    color: white;
-    border: 1px solid rgba(255,255,255,0.3);
-    padding: 6px 10px;
-    border-radius: 6px;
-    font-size: 12px;
-    cursor: pointer;
-    margin-left: 6px;
-    transition: background 0.2s;
-}
-
-.btn-export:hover {
-    background: rgba(255,255,255,0.3);
 }
 
 .trip-meta {

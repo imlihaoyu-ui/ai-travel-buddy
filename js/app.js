@@ -241,6 +241,9 @@ function updateHeader() {
 const DAY_COLORS = ['#4285F4','#34A853','#FBBC05','#EA4335','#8E24AA','#00ACC1','#FF7043','#5C6BC0','#26A69A','#FFA726'];
 let dayLayers = []; // store per-day route layers for highlight
 let isChinaMap = false; // 是否使用高德中文地图
+let activeDay = null; // 当前高亮的天（null = 默认整体视图）
+let dayNodeMarkers = []; // 胶囊节点
+let dayLinkLines = []; // 连线（含箭头）
 
 // WGS84 → GCJ02 坐标转换（高德/百度坐标系）
 function wgs84ToGcj02(lng, lat) {
@@ -343,177 +346,170 @@ function initMap() {
 
     if (!currentTripData) return;
 
-    const allCoords = [];
-    const hotelMarkersAdded = new Set();
+    activeDay = null;
+    dayNodeMarkers = [];
+    dayLinkLines = [];
 
-    // Draw per-day routes with different colors
-    currentTripData.days.forEach((day, index) => {
-        let dayCoords = [];
-
-        // Collect coords from schedule (new format) or attractions (old format)
-        if (day.schedule) {
-            day.schedule.forEach(item => {
-                if (item.type === 'attraction' && item.data?.coords?.length === 2) {
-                    dayCoords.push(item.data.coords);
-                }
-            });
-        } else if (day.attractions) {
-            day.attractions.forEach(attr => {
-                if (attr.coords && attr.coords.length === 2) dayCoords.push(attr.coords);
-            });
-        }
-        if (day.hotel?.coords?.length === 2) dayCoords.push(day.hotel.coords);
-
-        if (dayCoords.length === 0) return;
-
-        // 转换到当前地图坐标系（高德 GCJ-02 或 国际 WGS-84）
-        dayCoords = dayCoords.map(toMapCoord);
-        allCoords.push(...dayCoords);
-
-        const color = DAY_COLORS[index % DAY_COLORS.length];
-
-        // Draw smooth route for this day
-        if (dayCoords.length > 1) {
-            const smooth = generateSmoothRoute(dayCoords);
-            const polyline = L.polyline(smooth, {
-                color: color,
-                weight: 3.5,
-                opacity: 0.8,
-                smoothFactor: 2,
-                lineJoin: 'round'
-            }).addTo(map);
-            dayLayers.push({ day: day.day, layer: polyline, color, coords: dayCoords });
-        }
-
-        // Day badge marker (at the first attraction = start of day)
-        const startCoord = dayCoords[0];
-        const marker = L.marker(startCoord, {
-            icon: L.divIcon({
-                className: 'custom-marker',
-                html: `<div style="
-                    background: ${color};
-                    color: white;
-                    border: 2.5px solid white;
-                    border-radius: 50%;
-                    width: 26px;
-                    height: 26px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    font-size: 10px;
-                    font-weight: 700;
-                    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-                    font-family: Inter, sans-serif;
-                ">D${day.day}</div>`,
-                iconSize: [26, 26],
-                iconAnchor: [13, 13]
-            })
-        }).addTo(map);
-        marker.bindTooltip(`D${day.day} 起点 · ${day.title}`, { direction: 'top', offset: [0, -14], className: 'map-tooltip' });
-        markers.push(marker);
-
-        // Small dot markers for intermediate attractions
-        dayCoords.forEach((coord, ci) => {
-            if (ci === 0) return; // start = day badge
-            if (day.hotel?.coords && coord[0] === day.hotel.coords[0] && coord[1] === day.hotel.coords[1]) return; // hotel = separate marker
-            const dotMarker = L.circleMarker(coord, {
-                radius: 4,
-                color: color,
-                fillColor: 'white',
-                fillOpacity: 1,
-                weight: 2
-            }).addTo(map);
-            markers.push(dotMarker);
-        });
-
-        // Hotel marker (end of day) with 🏨 icon
+    // 1. 收集每天的关键节点（胶囊）：优先用酒店位置，否则当天第一个景点
+    const dayNodes = [];
+    currentTripData.days.forEach((day) => {
+        let nodeCoord = null;
         if (day.hotel?.coords?.length === 2) {
-            const hotelCoord = day.hotel.coords;
-            // Avoid overlap: only add if this hotel not already marked
-            const hotelKey = `${hotelCoord[0].toFixed(3)},${hotelCoord[1].toFixed(3)}`;
-            if (!hotelMarkersAdded.has(hotelKey)) {
-                hotelMarkersAdded.add(hotelKey);
-                const hotelMarker = L.marker(hotelCoord, {
-                    icon: L.divIcon({
-                        className: 'custom-marker',
-                        html: `<div style="
-                            background: white;
-                            border: 2px solid ${color};
-                            border-radius: 8px;
-                            width: 28px;
-                            height: 28px;
-                            display: flex;
-                            align-items: center;
-                            justify-content: center;
-                            font-size: 15px;
-                            box-shadow: 0 2px 8px rgba(0,0,0,0.25);
-                        ">🏨</div>`,
-                        iconSize: [28, 28],
-                        iconAnchor: [14, 14]
-                    })
-                }).addTo(map);
-                hotelMarker.bindTooltip(day.hotel.name, { direction: 'top', offset: [0, -14], className: 'map-tooltip' });
-                markers.push(hotelMarker);
-            }
+            nodeCoord = day.hotel.coords;
+        } else if (day.schedule) {
+            const firstAttr = day.schedule.find(s => s.type === 'attraction' && s.data?.coords?.length === 2);
+            if (firstAttr) nodeCoord = firstAttr.data.coords;
+        } else if (day.attractions?.length) {
+            const first = day.attractions.find(a => a.coords?.length === 2);
+            if (first) nodeCoord = first.coords;
         }
-
-        // Direction arrow at midpoint of route
-        if (dayCoords.length >= 2) {
-            const mid = Math.floor(dayCoords.length / 2);
-            const p1 = dayCoords[Math.max(0, mid - 1)];
-            const p2 = dayCoords[mid];
-            const angle = Math.atan2(p2[1] - p1[1], p2[0] - p1[0]) * 180 / Math.PI;
-            const midPt = [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2];
-            const arrowMarker = L.marker(midPt, {
-                icon: L.divIcon({
-                    className: 'route-arrow',
-                    html: `<div style="
-                        color: ${color};
-                        font-size: 16px;
-                        font-weight: bold;
-                        transform: rotate(${-angle + 90}deg);
-                        text-shadow: 0 0 3px white, 0 0 3px white;
-                    ">▼</div>`,
-                    iconSize: [16, 16],
-                    iconAnchor: [8, 8]
-                })
-            }).addTo(map);
-            markers.push(arrowMarker);
+        if (nodeCoord) {
+            dayNodes.push({
+                day: day.day,
+                title: day.title,
+                coord: toMapCoord(nodeCoord)
+            });
         }
     });
 
-    // Draw connecting lines between days (dashed, light gray)
-    for (let i = 0; i < currentTripData.days.length - 1; i++) {
-        const thisDay = currentTripData.days[i];
-        const nextDay = currentTripData.days[i + 1];
-        let endCoord = thisDay.hotel?.coords;
-        if (!endCoord && thisDay.schedule) {
-            const attrs = thisDay.schedule.filter(s => s.type === 'attraction' && s.data?.coords?.length === 2);
-            endCoord = attrs.slice(-1)[0]?.data?.coords;
-        }
-        let startCoord = nextDay.hotel?.coords;
-        if (!startCoord && nextDay.schedule) {
-            const attrs = nextDay.schedule.filter(s => s.type === 'attraction' && s.data?.coords?.length === 2);
-            startCoord = attrs[0]?.data?.coords;
-        }
-        // 转换坐标系
-        endCoord = endCoord ? toMapCoord(endCoord) : null;
-        startCoord = startCoord ? toMapCoord(startCoord) : null;
-        if (endCoord?.length === 2 && startCoord?.length === 2 &&
-            (endCoord[0] !== startCoord[0] || endCoord[1] !== startCoord[1])) {
-            L.polyline([endCoord, startCoord], {
-                color: '#9ca3af',
-                weight: 1.5,
-                opacity: 0.5,
-                dashArray: '6, 6'
-            }).addTo(map);
-        }
+    // 2. 绘制直线连线 + 箭头（统一蓝色）
+    for (let i = 0; i < dayNodes.length - 1; i++) {
+        const from = dayNodes[i];
+        const to = dayNodes[i + 1];
+        const line = L.polyline([from.coord, to.coord], {
+            color: '#2563eb',
+            weight: 2.5,
+            opacity: 0.65,
+            lineJoin: 'round'
+        }).addTo(map);
+
+        // 箭头（方向指示）
+        const midLat = (from.coord[0] + to.coord[0]) / 2;
+        const midLng = (from.coord[1] + to.coord[1]) / 2;
+        const angle = Math.atan2(to.coord[0] - from.coord[0], to.coord[1] - from.coord[1]) * 180 / Math.PI;
+        const arrow = L.marker([midLat, midLng], {
+            icon: L.divIcon({
+                className: 'route-arrow',
+                html: `<div style="
+                    color: #2563eb;
+                    font-size: 14px;
+                    font-weight: bold;
+                    transform: rotate(${-angle + 90}deg);
+                    text-shadow: 0 0 3px white, 0 0 3px white;
+                ">▶</div>`,
+                iconSize: [14, 14],
+                iconAnchor: [7, 7]
+            })
+        }).addTo(map);
+
+        dayLinkLines.push({ fromDay: from.day, line, arrow });
     }
 
-    // Fit bounds to show everything
-    if (allCoords.length > 0) {
-        map.fitBounds(L.latLngBounds(allCoords).pad(0.12));
+    // 3. 绘制胶囊节点
+    dayNodes.forEach((node, index) => {
+        const placeName = extractPlaceName(node.title);
+        const marker = L.marker(node.coord, {
+            icon: L.divIcon({
+                className: 'day-capsule',
+                html: `<div class="capsule-inner" data-day="${node.day}" style="
+                    background: #2563eb;
+                    color: white;
+                    border: 2px solid white;
+                    border-radius: 14px;
+                    padding: 4px 10px;
+                    display: flex;
+                    align-items: center;
+                    gap: 5px;
+                    font-size: 11px;
+                    font-weight: 600;
+                    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+                    white-space: nowrap;
+                    cursor: pointer;
+                    font-family: Inter, 'Noto Sans SC', sans-serif;
+                ">
+                    <span style="background:rgba(255,255,255,0.25);border-radius:9px;padding:1px 6px;font-weight:700;">D${node.day}</span>
+                    <span>${placeName}</span>
+                </div>`,
+                iconSize: [130, 30],
+                iconAnchor: [65, 15]
+            })
+        }).addTo(map);
+
+        marker.on('click', () => {
+            const dayNum = node.day;
+            if (activeDay === dayNum) {
+                // 再点一次取消高亮，回到整体
+                activeDay = null;
+                updateDayHighlight();
+                fitAllDays();
+            } else {
+                highlightDay(dayNum);
+                map.flyTo(node.coord, 9, { duration: 0.6 });
+            }
+        });
+
+        dayNodeMarkers.push({ day: node.day, marker, coord: node.coord });
+    });
+
+    // 4. 初始状态：默认 D1 深色，后续逐渐变淡（体现先后顺序）
+    updateDayHighlight();
+    fitAllDays();
+
+    function fitAllDays() {
+        if (dayNodes.length > 0) {
+            map.fitBounds(L.latLngBounds(dayNodes.map(n => n.coord)).pad(0.2));
+        }
     }
+}
+
+// 提取地点短名（用于胶囊标签）
+function extractPlaceName(title) {
+    if (!title) return '';
+    // 去掉常见前缀动词
+    let name = title.replace(/^(抵达|前往|飞往|出发去|游览|探访|前往|抵达|到达)/, '');
+    // 取箭头后面的部分（如 "班夫 → Golden" → "班夫"）
+    if (name.includes('→')) name = name.split('→')[0].trim();
+    // 去掉其他分隔符
+    name = name.replace(/[·、|].*$/, '').trim();
+    // 截断到6个字符
+    if (name.length > 6) name = name.slice(0, 6);
+    return name || '目的地';
+}
+
+// 高亮某一天：当天不透明，其他天变淡（不做聚焦，聚焦由调用方决定）
+function highlightDay(dayNum) {
+    activeDay = dayNum;
+    updateDayHighlight();
+}
+
+// 更新所有节点和连线的透明度
+function updateDayHighlight() {
+    dayNodeMarkers.forEach((node, index) => {
+        const el = node.marker.getElement();
+        if (!el) return;
+        let opacity;
+        if (activeDay === null) {
+            // 默认：D1 最深，依次变淡
+            opacity = Math.max(0.35, 1 - index * 0.13);
+        } else {
+            // 选中：当天 1.0，其他 0.3
+            opacity = node.day === activeDay ? 1.0 : 0.3;
+        }
+        el.style.opacity = opacity;
+        el.style.transition = 'opacity 0.3s ease';
+    });
+
+    dayLinkLines.forEach(link => {
+        let opacity;
+        if (activeDay === null) {
+            opacity = 0.65;
+        } else {
+            opacity = link.fromDay === activeDay ? 0.8 : 0.2;
+        }
+        if (link.line.setStyle) link.line.setStyle({ opacity });
+        const arrowEl = link.arrow.getElement();
+        if (arrowEl) { arrowEl.style.opacity = opacity; arrowEl.style.transition = 'opacity 0.3s ease'; }
+    });
 }
 
 // Smooth curve between points
@@ -755,6 +751,7 @@ function bindTimelineEvents() {
             const attr = findAttraction(id);
             if (attr) {
                 showAttractionDetail(attr);
+                highlightDay(dayNum);
                 focusMapOn(attr.coords, dayNum);
             }
         });
@@ -768,6 +765,7 @@ function bindTimelineEvents() {
             const hotel = findHotel(id);
             if (hotel) {
                 showHotelDetail(hotel);
+                highlightDay(dayNum);
                 focusMapOn(hotel.coords, dayNum);
             }
         });

@@ -158,15 +158,14 @@
                     <div class="trip-meta">
                         <!-- Dynamic content filled by JS -->
                     </div>
-                    <button class="btn-save-mobile" onclick="saveTripToPhone()" id="save-btn" title="扫码后在手机上查看，支持一键导航">
-                        📱 保存到手机
+                    <button class="btn-save-mobile" onclick="saveTripToPhone()" id="save-btn" title="扫码后在手机上查看行程，支持一键导航">
+                        <span class="btn-emoji">📱</span>
+                        <span class="btn-label">手机查看</span>
                         <span class="badge-new">NEW</span>
                     </button>
-                    <button class="btn-export" onclick="exportPDF()" title="下载行程为PDF">
-                        📄 PDF
-                    </button>
-                    <button class="btn-export" onclick="exportCalendar()" title="导出为日历事件">
-                        📅 日历
+                    <button class="btn-export" onclick="exportPDF()" title="下载行程为PDF文件">
+                        <span class="btn-emoji">📄</span>
+                        <span class="btn-label">导出PDF</span>
                     </button>
                 </div>
             </header>
