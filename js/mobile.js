@@ -163,20 +163,38 @@ function renderHotelItem(hotel) {
 
 function renderNavButtons(coords, name) {
     const [lat, lng] = coords;
-    const encodedName = encodeURIComponent(name);
     return `
         <div class="nav-buttons">
-            <a class="nav-btn amap" href="https://uri.amap.com/marker?position=${lng},${lat}&name=${encodedName}&src=mypage&coordinate=gaode&callnative=1" target="_blank" rel="noopener">
-                🗺️ 高德
-            </a>
-            <a class="nav-btn bmap" href="https://api.map.baidu.com/marker?location=${lat},${lng}&title=${encodedName}&content=${encodedName}&output=html&coord_type=gcj02&src=mypage" target="_blank" rel="noopener">
-                📍 百度
-            </a>
-            <a class="nav-btn gmap" href="https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&destination_place_id=${encodedName}" target="_blank" rel="noopener">
-                🌐 Google
-            </a>
+            <button class="nav-btn nav-unified" onclick="handleNavigate(${lat}, ${lng}, '${escapeHtml(name)}')">
+                🧭 导航
+            </button>
         </div>
     `;
+}
+
+// 统一导航按钮：用 geo: scheme 唤起系统选择器（用户选已安装的地图）
+function handleNavigate(lat, lng, name) {
+    const geoUrl = `geo:${lat},${lng}?q=${lat},${lng}(${encodeURIComponent(name)})`;
+
+    // 微信/企业微信内置浏览器可能拦截 geo: scheme
+    const isWeChat = /MicroMessenger|wxwork/i.test(navigator.userAgent);
+
+    if (isWeChat) {
+        // 微信内直接打开高德 web（系统会尝试唤起高德app）
+        window.location.href = `https://uri.amap.com/marker?position=${lng},${lat}&name=${encodeURIComponent(name)}&src=mypage&coordinate=gaode&callnative=1`;
+        return;
+    }
+
+    // 标准浏览器：geo: scheme 会唤起系统选择器（Apple Maps / Google Maps / 高德 / 百度 等）
+    const startTime = Date.now();
+    window.location.href = geoUrl;
+
+    // 兜底：如果 2.5 秒后页面还在（geo: 未生效，如桌面浏览器），打开高德 web
+    setTimeout(() => {
+        if (!document.hidden) {
+            window.open(`https://uri.amap.com/marker?position=${lng},${lat}&name=${encodeURIComponent(name)}&src=mypage&coordinate=gaode&callnative=1`, '_blank');
+        }
+    }, 2500);
 }
 
 function renderMap(trip) {

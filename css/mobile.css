@@ -220,7 +220,7 @@ body {
     margin-bottom: 6px;
 }
 
-/* Nav buttons - this is the key feature */
+/* Nav buttons - unified navigation */
 .nav-buttons {
     display: flex;
     gap: 6px;
@@ -229,36 +229,31 @@ body {
 
 .nav-btn {
     flex: 1;
-    padding: 7px 8px;
+    padding: 8px 10px;
     border: none;
-    border-radius: 6px;
-    font-size: 11px;
-    font-weight: 500;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 3px;
+    gap: 4px;
     background: #2563eb;
     color: white;
     text-decoration: none;
     -webkit-tap-highlight-color: transparent;
+    box-shadow: 0 1px 3px rgba(37, 99, 235, 0.3);
 }
 
-.nav-btn.amap {
-    background: #00b0ff;
-}
-
-.nav-btn.bmap {
-    background: #2932e1;
-}
-
-.nav-btn.gmap {
-    background: #4285f4;
+.nav-btn.nav-unified {
+    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+    padding: 10px;
+    font-size: 14px;
 }
 
 .nav-btn:active {
-    transform: scale(0.96);
+    transform: scale(0.97);
 }
 
 /* Commute */
