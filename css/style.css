@@ -590,9 +590,40 @@ body {
     border-radius: var(--radius-sm);
     padding: 12px 14px;
     margin-bottom: 6px;
-    cursor: pointer;
+    cursor: grab;
     transition: all 0.2s;
     border: 1px solid transparent;
+}
+
+.attraction-item:active {
+    cursor: grabbing;
+}
+
+.attraction-item.dragging {
+    opacity: 0.35;
+}
+
+.attraction-item.drop-before {
+    box-shadow: 0 -3px 0 0 var(--primary);
+}
+
+.attraction-item.drop-after {
+    box-shadow: 0 3px 0 0 var(--primary);
+}
+
+.drag-handle {
+    flex: 0 0 auto;
+    color: #cbd5e1;
+    font-size: 12px;
+    letter-spacing: -2px;
+    line-height: 1;
+    cursor: grab;
+    user-select: none;
+    transition: color 0.2s;
+}
+
+.attraction-item:hover .drag-handle {
+    color: var(--primary);
 }
 
 .attraction-item:hover {
@@ -608,7 +639,7 @@ body {
 .attraction-main {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 6px;
 }
 
 .attraction-name {
@@ -876,6 +907,7 @@ body {
     color: var(--primary);
     cursor: pointer;
     margin-top: 8px;
+    margin-left: auto;
     padding: 4px 0;
 }
 

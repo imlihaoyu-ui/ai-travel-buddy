@@ -1,4 +1,5 @@
 // ==================== APP STATE ====================
+console.log('[AI旅行搭子] drag-reorder v2 loaded');
 let currentTripData = null;
 let map = null;
 let routeLayer = null;
@@ -395,29 +396,40 @@ async function initMap() {
                 day: day.day,
                 from: dayPins[i].coords,
                 to: dayPins[i + 1].coords,
-                icon, isFlight, isWalk
+                icon, isFlight, isWalk,
+                label: `${dayPins[i].name} → ${dayPins[i + 1].name}`
             });
         }
     });
 
-    // 天间线段
+    // 天间线段：跨城交通记录在"抵达当天"的 schedule 里，线段也必须归属次日，
+    // 否则高亮和点击会落到前一天，和右侧列表对不上
     for (let i = 0; i < currentTripData.days.length - 1; i++) {
-        const todayPins = allPins.filter(p => p.day === currentTripData.days[i].day);
-        const tomorrowPins = allPins.filter(p => p.day === currentTripData.days[i + 1].day);
+        const todayDay = currentTripData.days[i];
+        const tomorrowDay = currentTripData.days[i + 1];
+        const todayPins = allPins.filter(p => p.day === todayDay.day);
+        const tomorrowPins = allPins.filter(p => p.day === tomorrowDay.day);
         if (todayPins.length && tomorrowPins.length) {
             const from = todayPins[todayPins.length - 1];
             const to = tomorrowPins[0];
             let icon = '🚗', isFlight = false, isWalk = false;
-            const tomorrowItems = currentTripData.days[i + 1].schedule || [];
+            const tomorrowItems = tomorrowDay.schedule || [];
             const transportItem = tomorrowItems.find(s => s.type === 'transport' && s.data);
             if (transportItem) {
                 icon = getIconByMode(transportItem.data.mode);
                 isFlight = /飞机|✈️|航班/.test(transportItem.data.mode || '');
+                isWalk = /步行|走路/.test(transportItem.data.mode || '');
             }
+            const cityLabel = transportItem
+                ? `${transportItem.data.from || from.name} → ${transportItem.data.to || to.name}`
+                : `${from.name} → ${to.name}`;
             allSegments.push({
-                day: currentTripData.days[i].day,
-                from: from.coords, to: to.coords,
-                icon, isFlight, isWalk
+                day: tomorrowDay.day,
+                from: from.coords,
+                to: to.coords,
+                icon, isFlight, isWalk,
+                isInterCity: !!transportItem,
+                label: cityLabel
             });
         }
     }
@@ -472,16 +484,18 @@ async function initMap() {
     // 4. 绘制线段（水管样式：粗线 + 密集箭头）+ 交通图标
     allSegments.forEach((seg) => {
         const routeCoords = (seg.routeCoords || [seg.from, seg.to]).map(toMapCoord);
-        const color = '#2563eb';
+        const color = seg.isInterCity ? '#1d4ed8' : '#2563eb';
 
         // 水管粗线（去掉箭头，改用交通图标指示方向）
         const line = L.polyline(routeCoords, {
             color: color,
-            weight: 5,
+            weight: seg.isInterCity ? 6 : 5,
             opacity: 0.75,
             lineJoin: 'round',
             lineCap: 'round'
         }).addTo(map);
+
+        line.bindTooltip(`D${seg.day} · ${seg.label}`, { sticky: true, className: 'map-tooltip' });
 
         // 交通方式图标（线段中点，挨着路线）
         const midIdx = Math.floor(routeCoords.length / 2);
@@ -866,9 +880,9 @@ function renderTimeline() {
 
         // New schedule-based rendering
         if (day.schedule && day.schedule.length > 0) {
-            day.schedule.forEach(item => {
+            day.schedule.forEach((item, index) => {
                 if (item.type === 'attraction' && item.data) {
-                    html += renderAttraction(item.data, day.day, item.startTime);
+                    html += renderAttraction(item.data, day.day, item.startTime, index);
                 } else if (item.type === 'commute') {
                     html += renderCommute(item);
                 } else if (item.type === 'transport' && item.data) {
@@ -895,7 +909,7 @@ function renderTimeline() {
     bindTimelineEvents();
 }
 
-function renderAttraction(attr, dayNum, startTime) {
+function renderAttraction(attr, dayNum, startTime, scheduleIndex) {
     const metaItems = [];
     if (startTime) metaItems.push(`🕐 ${startTime}`);
     if (attr.duration) metaItems.push(`⏱ ${attr.duration}`);
@@ -912,8 +926,9 @@ function renderAttraction(attr, dayNum, startTime) {
     return `
         <div class="location-node">
             <div class="node-dot attraction"></div>
-            <div class="attraction-item" data-id="${attr.id}" data-type="attraction" data-day="${dayNum}">
+            <div class="attraction-item" draggable="true" data-id="${attr.id}" data-type="attraction" data-day="${dayNum}" data-schedule-index="${scheduleIndex}">
                 <div class="attraction-main">
+                    <span class="drag-handle" title="拖拽调整当天游玩顺序">⋮⋮</span>
                     <span class="attraction-name">${attr.icon || '📍'} ${attr.name}</span>
                     <span class="expand-toggle" data-target="${attr.id}-detail">展开 ▾</span>
                 </div>
@@ -994,6 +1009,9 @@ function renderCommute(commute) {
 }
 
 // ==================== EVENT BINDING ====================
+// 时间线会被反复重渲染，页脚和聊天区是静态节点，只绑定一次，避免重复触发
+let staticEventsBound = false;
+
 function bindTimelineEvents() {
     // day-header 点击：地图聚焦 + 高亮当天
     document.querySelectorAll('.day-header').forEach(header => {
@@ -1008,6 +1026,7 @@ function bindTimelineEvents() {
 
     document.querySelectorAll('.attraction-item').forEach(item => {
         item.addEventListener('click', (e) => {
+            if (suppressClick) { suppressClick = false; return; }
             if (e.target.classList.contains('expand-toggle')) {
                 toggleExpand(e.target);
                 return;
@@ -1045,28 +1064,330 @@ function bindTimelineEvents() {
         });
     });
 
-    document.querySelectorAll('.pref-tag').forEach(tag => {
-        tag.addEventListener('click', () => {
-            document.querySelectorAll('.pref-tag').forEach(t => t.classList.remove('active'));
-            tag.classList.add('active');
+    if (!staticEventsBound) {
+        document.querySelectorAll('.pref-tag').forEach(tag => {
+            tag.addEventListener('click', () => {
+                document.querySelectorAll('.pref-tag').forEach(t => t.classList.remove('active'));
+                tag.classList.add('active');
+            });
         });
+
+        document.getElementById('chat-send').addEventListener('click', handleChat);
+        document.getElementById('chat-input').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') handleChat();
+        });
+
+        // Quick chat shortcut buttons
+        document.querySelectorAll('.quick-chat-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const msg = btn.dataset.msg;
+                if (msg) {
+                    document.getElementById('chat-input').value = msg;
+                    handleChat();
+                }
+            });
+        });
+
+        staticEventsBound = true;
+    }
+
+    bindDragEvents();
+}
+
+// ==================== DRAG TO REORDER（同一天内调整景点顺序） ====================
+let dragState = null;
+let suppressClick = false;
+let dragDirty = false;
+let lastSwapTarget = null;
+let lastSwapAt = 0;
+
+function bindDragEvents() {
+    document.querySelectorAll('.attraction-item').forEach(item => {
+        item.addEventListener('dragstart', onDragStart);
+        item.addEventListener('dragend', onDragEnd);
     });
 
-    document.getElementById('chat-send').addEventListener('click', handleChat);
-    document.getElementById('chat-input').addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') handleChat();
+    // 拖拽期间的事件统一委托在容器上，列表重渲染后也不需要重新绑定
+    const container = document.getElementById('timeline-container');
+    if (container && !container.dataset.dragBound) {
+        container.addEventListener('dragenter', onContainerDragEnter);
+        container.addEventListener('dragover', onContainerDragOver);
+        container.addEventListener('drop', onContainerDrop);
+        container.dataset.dragBound = '1';
+    }
+}
+
+function onDragStart(e) {
+    const item = e.currentTarget;
+    dragState = {
+        day: parseInt(item.dataset.day, 10),
+        id: item.dataset.id
+    };
+    dragDirty = false;
+    lastSwapTarget = null;
+    suppressClick = true;
+    item.classList.add('dragging');
+    if (e.dataTransfer) {
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', item.dataset.id);
+    }
+}
+
+// 拖到哪张卡片附近就和它互换位置：不要求精准对准，靠近就跟着走
+function onContainerDragEnter(e) {
+    if (!dragState) return;
+    const card = e.target.closest?.('.attraction-item');
+    if (!card) return;
+    if (card.dataset.id === dragState.id) {
+        lastSwapTarget = null;
+        return;
+    }
+    if (parseInt(card.dataset.day, 10) !== dragState.day) return;
+
+    // 快速划过同一张卡片时不重复交换，避免来回抖动
+    const now = Date.now();
+    if (card.dataset.id === lastSwapTarget && now - lastSwapAt < 250) return;
+
+    if (swapWithCard(card)) {
+        lastSwapTarget = card.dataset.id;
+        lastSwapAt = now;
+        dragDirty = true;
+    }
+}
+
+function onContainerDragOver(e) {
+    if (!dragState) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+
+    // 拖到列表上下边缘时自动滚动，长列表也能拖到后面
+    const container = e.currentTarget;
+    const rect = container.getBoundingClientRect();
+    if (e.clientY && e.clientY < rect.top + 48) container.scrollTop -= 14;
+    else if (e.clientY && e.clientY > rect.bottom - 48) container.scrollTop += 14;
+}
+
+function onContainerDrop(e) {
+    if (!dragState) return;
+    e.preventDefault();
+    finishDrag();
+}
+
+function onDragEnd() {
+    finishDrag();
+}
+
+function finishDrag() {
+    const state = dragState;
+    if (!state) return;
+
+    dragState = null;
+    lastSwapTarget = null;
+    document.querySelectorAll('.attraction-item.dragging').forEach(el => el.classList.remove('dragging'));
+
+    const day = currentTripData?.days.find(d => d.day === state.day);
+    if (day && dragDirty) {
+        recalcDayAfterReorder(day);
+        refreshAfterReorder(state.day);
+    }
+
+    dragDirty = false;
+    // 拖拽结束后浏览器会补一次 click，忽略掉避免误开详情
+    setTimeout(() => { suppressClick = false; }, 0);
+}
+
+// 交换两个景点在 schedule 中的位置，同时交换 DOM 节点，拖拽过程不中断
+function swapWithCard(targetCard) {
+    const day = currentTripData?.days.find(d => d.day === dragState.day);
+    if (!day?.schedule) return false;
+
+    const schedule = day.schedule;
+    const fromIndex = schedule.findIndex(item => item.type === 'attraction' && item.data?.id === dragState.id);
+    const toIndex = schedule.findIndex(item => item.type === 'attraction' && item.data?.id === targetCard.dataset.id);
+    if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return false;
+
+    [schedule[fromIndex], schedule[toIndex]] = [schedule[toIndex], schedule[fromIndex]];
+
+    const fromCard = document.querySelector(`.attraction-item[data-id="${dragState.id}"]`);
+    const fromNode = fromCard?.closest('.location-node');
+    const toNode = targetCard.closest('.location-node');
+    if (fromNode && toNode && fromNode !== toNode && fromNode.parentNode === toNode.parentNode) {
+        const parent = fromNode.parentNode;
+        const marker = document.createComment('swap');
+        parent.insertBefore(marker, fromNode);
+        parent.insertBefore(fromNode, toNode);
+        parent.insertBefore(toNode, marker);
+        marker.remove();
+    }
+    return true;
+}
+
+function recalcDayAfterReorder(day) {
+    const schedule = day.schedule || [];
+    const slots = [];
+    schedule.forEach((item, index) => {
+        if (item.type === 'attraction') slots.push(index);
+    });
+    if (!slots.length) return;
+
+    // 1. 相邻景点之间的通勤按新顺序重算；跨城 transport 段保持原样
+    for (let i = 0; i < slots.length - 1; i++) {
+        const fromItem = schedule[slots[i]];
+        const toItem = schedule[slots[i + 1]];
+        const between = schedule.slice(slots[i] + 1, slots[i + 1]);
+        if (between.some(item => item.type === 'transport')) continue;
+        const commute = between.find(item => item.type === 'commute');
+        if (!commute) continue;
+        const estimate = estimateCommute(fromItem.data?.coords, toItem.data?.coords, commute.mode);
+        commute.duration = estimate.duration;
+        commute.cost = estimate.cost;
+        commute.detail = estimate.detail;
+    }
+
+    // 2. 用新的通勤时长重排每站开始时间；当天出发时间固定为第一次重算前的最早时间
+    if (day._startMinutes === undefined) {
+        const starts = slots
+            .map(slot => parseTimeToMinutes(schedule[slot].startTime))
+            .filter(value => value !== null);
+        day._startMinutes = starts.length ? Math.min(...starts) : 9 * 60;
+    }
+    let cursor = day._startMinutes;
+
+    slots.forEach((slot, i) => {
+        const item = schedule[slot];
+        item.startTime = minutesToTime(cursor);
+        cursor += parseDurationMinutes(item.data?.duration, 90);
+        if (i < slots.length - 1) {
+            schedule.slice(slot + 1, slots[i + 1]).forEach(between => {
+                cursor += parseDurationMinutes(between.duration, between.type === 'transport' ? 60 : 15);
+            });
+        }
     });
 
-    // Quick chat shortcut buttons
-    document.querySelectorAll('.quick-chat-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const msg = btn.dataset.msg;
-            if (msg) {
-                document.getElementById('chat-input').value = msg;
-                handleChat();
-            }
-        });
+    // 3. 同步当天路线概要与驾驶信息
+    const names = slots.map(slot => schedule[slot].data?.name).filter(Boolean);
+    if (names.length) day.route = names.join(' → ');
+    day.driving = summarizeDriving(schedule);
+}
+
+function refreshAfterReorder(dayNum) {
+    const container = document.getElementById('timeline-container');
+    const scrollTop = container ? container.scrollTop : 0;
+    const keepDay = activeDay || dayNum;
+
+    updateHeader();
+    renderTimeline();
+    if (container) container.scrollTop = scrollTop;
+
+    // 地图按新顺序重绘（含重新取路线），完成后保持当天高亮
+    initMap().then(() => highlightDay(keepDay));
+
+    showToast('已按新顺序更新行程、预算与地图');
+}
+
+function estimateCommute(fromCoords, toCoords, mode) {
+    const icon = getIconByMode(mode);
+    if (!fromCoords || !toCoords || fromCoords.length !== 2 || toCoords.length !== 2) {
+        return { icon, duration: '约15分钟', cost: '免费', detail: '按新顺序重算，实际以导航为准' };
+    }
+
+    const straightKm = haversineKm(fromCoords, toCoords);
+    const roadKm = Math.max(0.2, straightKm * 1.3);
+
+    let speed = 50;
+    if (/步行|走路/.test(mode || '')) speed = 4.5;
+    else if (/地铁|公交/.test(mode || '')) speed = 22;
+    else if (/打车|出租|taxi/i.test(mode || '')) speed = 35;
+
+    const minutes = Math.max(3, Math.round(roadKm / speed * 60 / 5) * 5);
+
+    let cost = '免费';
+    if (/打车|出租|taxi/i.test(mode || '')) {
+        cost = `约¥${Math.max(10, Math.round(roadKm * 2.5 / 5) * 5)}`;
+    } else if (/地铁|公交/.test(mode || '')) {
+        cost = '约¥5';
+    } else if (/自驾|开车/.test(mode || '') && roadKm > 1) {
+        cost = `约¥${Math.max(5, Math.round(roadKm * 0.8 / 5) * 5)}`;
+    }
+
+    return {
+        icon,
+        duration: formatDuration(minutes),
+        cost,
+        detail: `按新顺序重算，约${roadKm.toFixed(1)}km，实际以导航为准`
+    };
+}
+
+function summarizeDriving(schedule) {
+    let minutes = 0;
+    let km = 0;
+    schedule.forEach(item => {
+        if (item.type === 'transport') {
+            minutes += parseDurationMinutes(item.data?.duration, 0);
+            km += parseKm(item.data?.distance);
+        } else if (item.type === 'commute' && /自驾|开车/.test(item.mode || '')) {
+            minutes += parseDurationMinutes(item.duration, 0);
+        }
     });
+    if (!minutes) return null;
+
+    const hours = minutes / 60;
+    const durationText = hours >= 1
+        ? `约${(Math.round(hours * 10) / 10)}小时`
+        : `约${minutes}分钟`;
+    return km > 0 ? `${durationText}（${Math.round(km)}km）` : durationText;
+}
+
+function haversineKm(a, b) {
+    const R = 6371;
+    const toRad = deg => deg * Math.PI / 180;
+    const dLat = toRad(b[0] - a[0]);
+    const dLng = toRad(b[1] - a[1]);
+    const h = Math.sin(dLat / 2) ** 2
+        + Math.cos(toRad(a[0])) * Math.cos(toRad(b[0])) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+function parseTimeToMinutes(text) {
+    if (!text) return null;
+    const match = String(text).match(/(\d{1,2}):(\d{2})/);
+    if (!match) return null;
+    return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+}
+
+function minutesToTime(minutes) {
+    const normalized = ((minutes % 1440) + 1440) % 1440;
+    const h = Math.floor(normalized / 60);
+    const m = normalized % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+function parseDurationMinutes(text, fallback = 0) {
+    if (!text) return fallback;
+    const str = String(text);
+    const hourMatch = str.match(/(\d+(?:\.\d+)?)\s*(?:小时|h|hr)/i);
+    const minMatch = str.match(/(\d+)\s*(?:分钟|分|min)/i);
+    if (hourMatch) {
+        const base = parseFloat(hourMatch[1]) * 60;
+        return Math.round(base + (minMatch ? parseInt(minMatch[1], 10) : 0));
+    }
+    if (minMatch) return parseInt(minMatch[1], 10);
+    return fallback;
+}
+
+function formatDuration(minutes) {
+    if (minutes >= 60) {
+        const h = Math.floor(minutes / 60);
+        const m = minutes % 60;
+        return m ? `约${h}小时${m}分` : `约${h}小时`;
+    }
+    return `约${minutes}分钟`;
+}
+
+function parseKm(text) {
+    if (!text) return 0;
+    const match = String(text).match(/(\d+(?:\.\d+)?)\s*km/i);
+    return match ? parseFloat(match[1]) : 0;
 }
 
 function toggleExpand(toggle) {
